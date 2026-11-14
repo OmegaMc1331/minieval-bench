@@ -55,6 +55,7 @@ def load_config(config_path: Path) -> BenchmarkConfig:
 
     apply_defaults(config)
     resolve_dataset_path(config, config_path)
+    resolve_evaluator_paths(config, config_path)
     return config
 
 
@@ -72,6 +73,16 @@ def resolve_dataset_path(config: BenchmarkConfig, config_path: Path) -> None:
     if not dataset_path.is_absolute():
         dataset_path = config_path.parent / dataset_path
     config.dataset = str(dataset_path.resolve())
+
+
+def resolve_evaluator_paths(config: BenchmarkConfig, config_path: Path) -> None:
+    judge = config.evaluators.judge if config.evaluators else None
+    if judge is None:
+        return
+    for field in ("rubric", "calibration"):
+        path = getattr(judge, field)
+        if path and not Path(path).is_absolute():
+            setattr(judge, field, str((config_path.parent / path).resolve()))
 
 
 def load_dataset(dataset_path: Path) -> list[DatasetEntry]:
