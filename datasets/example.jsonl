@@ -1,0 +1,6 @@
+{"id": "identifier-1", "prompt": "Generate a short identifier.", "metric": "regex", "reference": "^mock-[0-9a-f]{8}$"}
+{"id": "identifier-2", "prompt": "Generate another short identifier.", "metric": "regex", "reference": "^mock-[0-9a-f]{8}$"}
+{"id": "tag-1", "prompt": "Answer using the mock tag format.", "metric": "contains", "reference": "mock"}
+{"id": "echo-1", "prompt": "Reply with exactly: ready", "metric": "exact_match", "reference": "ready"}
+{"id": "echo-2", "prompt": "Reply with exactly: OK", "metric": "exact_match", "reference": "OK", "system": "You are a terse assistant."}
+{"id": "pattern-1", "prompt": "Give an eight digit number.", "metric": "regex", "reference": "\\d{8}"}

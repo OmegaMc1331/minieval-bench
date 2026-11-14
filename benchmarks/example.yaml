@@ -1,0 +1,16 @@
+benchmark: mock-demo
+dataset: ../datasets/example.jsonl
+
+defaults:
+  repeats: 3
+  concurrency: 4
+  seed: 42
+  timeout: 30
+
+models:
+  - name: mock-free
+    provider: mock
+  - name: mock-priced
+    provider: mock
+    input_cost_per_1m: 0.5
+    output_cost_per_1m: 1.5
