@@ -1,6 +1,6 @@
 [project]
 name = "minieval-bench"
-version = "0.2.0"
+version = "0.3.0"
 description = "Lightweight framework for benchmarking and comparing language models."
 readme = "README.md"
 license = "MIT"
@@ -17,6 +17,7 @@ classifiers = [
     "Topic :: Software Development :: Testing",
 ]
 dependencies = [
+    "jsonschema>=4.21",
     "litellm>=1.63",
     "pydantic>=2.7",
     "pyyaml>=6.0",
@@ -47,6 +48,9 @@ packages = ["src/minieval_bench"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
+markers = [
+    "docker: integration tests that execute untrusted code inside the restricted container (set MINIEVAL_DOCKER_TESTS=1)",
+]
 
 [tool.ruff]
 line-length = 100
