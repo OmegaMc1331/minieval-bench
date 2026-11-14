@@ -88,6 +88,9 @@ def build_run_payload(
             trial.output_tokens,
             None if trial.cost_usd is None else round(trial.cost_usd, 10),
             None if trial.error_type is None else error_index[trial.error_type],
+            None if trial.generation_ms is None else round(trial.generation_ms, 3),
+            None if trial.evaluation_ms is None else round(trial.evaluation_ms, 3),
+            None if trial.total_ms is None else round(trial.total_ms, 3),
         ]
         for trial in trials
     ]

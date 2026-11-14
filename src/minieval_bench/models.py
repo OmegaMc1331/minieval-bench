@@ -157,6 +157,9 @@ class TrialResult(BaseModel):
     queue_ms: float | None = None
     plan_index: int | None = None
     evaluation: EvaluationOutcome | None = None
+    generation_ms: float | None = None
+    evaluation_ms: float | None = None
+    total_ms: float | None = None
 
 
 class ModelStats(BaseModel):
@@ -170,6 +173,8 @@ class ModelStats(BaseModel):
     score: float | None
     median_latency_ms: float | None
     p95_latency_ms: float | None
+    median_evaluation_ms: float | None = None
+    median_total_ms: float | None = None
     input_tokens: int | None
     output_tokens: int | None
     cost_usd: float | None

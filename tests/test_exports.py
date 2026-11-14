@@ -43,7 +43,7 @@ def test_export_writes_header_and_rows(tmp_path):
     assert rows[1][4] == "true"
     assert rows[2][3] == "false"
     assert rows[2][4] == ""
-    assert rows[2][10] == "Boom"
+    assert rows[2][CSV_COLUMNS.index("error_type")] == "Boom"
 
 
 def test_export_preserves_missing_values_as_empty(tmp_path):

@@ -127,8 +127,9 @@ def markdown_report(manifest: Manifest, stats: list[ModelStats]) -> str:
         "## Results",
         "",
         "| Model | Requests | OK | Failed | Success | Accuracy | Coverage | Overall |"
-        " Median (ms) | P95 (ms) | Queue (ms) | In tokens | Out tokens | Cost (USD) |",
-        "| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |",
+        " Median gen (ms) | P95 gen (ms) | Median eval (ms) | Median total (ms) |"
+        " Queue (ms) | In tokens | Out tokens | Cost (USD) |",
+        "| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |",
     ]
     for model_stats in stats:
         cells = [
@@ -142,6 +143,8 @@ def markdown_report(manifest: Manifest, stats: list[ModelStats]) -> str:
             rate(model_stats.overall_pass_rate),
             cell(model_stats.median_latency_ms, ".1f"),
             cell(model_stats.p95_latency_ms, ".1f"),
+            cell(model_stats.median_evaluation_ms, ".1f"),
+            cell(model_stats.median_total_ms, ".1f"),
             cell(model_stats.median_queue_ms, ".1f"),
             consumption_cell(
                 model_stats.input_tokens,
@@ -169,6 +172,11 @@ def markdown_report(manifest: Manifest, stats: list[ModelStats]) -> str:
         "- **Accuracy** = correct answers / evaluable answers (successful requests).",
         "- **Coverage** = evaluated trials / planned requests.",
         "- **Overall** = correct answers / planned requests; failed requests count as not passed.",
+        "",
+        "Latency columns measure the model call only (provider retries included)."
+        " Evaluation latency measures the evaluator run and total latency covers"
+        " generation plus evaluation. Reports written before 0.3.1 stored a single"
+        " `latency_ms` mixing both; those values are shown as-is.",
         "",
         "Token and cost totals are sums over the requests that reported them; "
         "`value (r/s)` marks a partial total covering r of s successful requests. "
@@ -239,8 +247,10 @@ def stats_table(stats: list[ModelStats]) -> Table:
     table.add_column("Accuracy", justify="right")
     table.add_column("Coverage", justify="right")
     table.add_column("Overall", justify="right")
-    table.add_column("Median (ms)", justify="right")
-    table.add_column("P95 (ms)", justify="right")
+    table.add_column("Median gen (ms)", justify="right")
+    table.add_column("P95 gen (ms)", justify="right")
+    table.add_column("Median eval (ms)", justify="right")
+    table.add_column("Median total (ms)", justify="right")
     table.add_column("Queue (ms)", justify="right")
     table.add_column("In tokens", justify="right")
     table.add_column("Out tokens", justify="right")
@@ -257,6 +267,8 @@ def stats_table(stats: list[ModelStats]) -> Table:
             rate(model_stats.overall_pass_rate),
             cell(model_stats.median_latency_ms, ".1f"),
             cell(model_stats.p95_latency_ms, ".1f"),
+            cell(model_stats.median_evaluation_ms, ".1f"),
+            cell(model_stats.median_total_ms, ".1f"),
             cell(model_stats.median_queue_ms, ".1f"),
             consumption_cell(
                 model_stats.input_tokens,

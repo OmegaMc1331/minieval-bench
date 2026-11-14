@@ -117,18 +117,20 @@ def run_trial(
 ) -> TrialResult:
     started = time.perf_counter()
     queue_ms = (started - queued_at) * 1000
+    generation_started = time.perf_counter()
     try:
         response = provider.complete(
             planned.entry.prompt, planned.entry.system, planned.seed
         )
     except Exception as exc:
+        generation_ms = (time.perf_counter() - generation_started) * 1000
         return TrialResult(
             model=planned.model.name,
             entry_id=planned.entry.id,
             repeat=planned.repeat,
             ok=False,
             response=None,
-            latency_ms=(time.perf_counter() - started) * 1000,
+            latency_ms=generation_ms,
             input_tokens=None,
             output_tokens=None,
             cost_usd=None,
@@ -137,17 +139,24 @@ def run_trial(
             passed=None,
             queue_ms=queue_ms,
             plan_index=planned.plan_index,
+            generation_ms=generation_ms,
+            evaluation_ms=None,
+            total_ms=generation_ms,
         )
+    generation_ms = (time.perf_counter() - generation_started) * 1000
+    evaluation_started = time.perf_counter()
     outcome = evaluate_response(
         planned.entry, response.text, judge=judge, code_runner=code_runner
     )
+    evaluation_ms = (time.perf_counter() - evaluation_started) * 1000
+    total_ms = generation_ms + evaluation_ms
     return TrialResult(
         model=planned.model.name,
         entry_id=planned.entry.id,
         repeat=planned.repeat,
         ok=True,
         response=response.text,
-        latency_ms=(time.perf_counter() - started) * 1000,
+        latency_ms=generation_ms,
         input_tokens=response.input_tokens,
         output_tokens=response.output_tokens,
         cost_usd=response.cost_usd,
@@ -157,6 +166,9 @@ def run_trial(
         queue_ms=queue_ms,
         plan_index=planned.plan_index,
         evaluation=outcome,
+        generation_ms=generation_ms,
+        evaluation_ms=evaluation_ms,
+        total_ms=total_ms,
     )
 
 
@@ -176,7 +188,16 @@ def compute_stats(trials: list[TrialResult]) -> list[ModelStats]:
         model_trials = grouped[model]
         succeeded = [trial for trial in model_trials if trial.ok]
         binary = [trial for trial in succeeded if is_binary_evaluated(trial)]
-        latencies = [trial.latency_ms for trial in succeeded]
+        latencies = [
+            trial.generation_ms if trial.generation_ms is not None else trial.latency_ms
+            for trial in succeeded
+        ]
+        evaluation_latencies = [
+            trial.evaluation_ms for trial in succeeded if trial.evaluation_ms is not None
+        ]
+        total_latencies = [
+            trial.total_ms for trial in succeeded if trial.total_ms is not None
+        ]
         queue_delays = [trial.queue_ms for trial in model_trials if trial.queue_ms is not None]
         passed = sum(1 for trial in binary if trial.passed)
         errors: dict[str, int] = {}
@@ -213,6 +234,10 @@ def compute_stats(trials: list[TrialResult]) -> list[ModelStats]:
                 score=answer_accuracy,
                 median_latency_ms=statistics.median(latencies) if latencies else None,
                 p95_latency_ms=percentile(latencies, 95) if latencies else None,
+                median_evaluation_ms=(
+                    statistics.median(evaluation_latencies) if evaluation_latencies else None
+                ),
+                median_total_ms=statistics.median(total_latencies) if total_latencies else None,
                 input_tokens=input_tokens,
                 output_tokens=output_tokens,
                 cost_usd=cost_usd,

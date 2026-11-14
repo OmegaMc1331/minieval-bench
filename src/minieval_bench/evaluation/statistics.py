@@ -64,9 +64,12 @@ def question_pass_rates(trials: list[TrialResult]) -> list[float]:
 def question_latencies(trials: list[TrialResult]) -> list[float]:
     by_question: dict[str, list[float]] = {}
     for trial in trials:
-        if not trial.ok or trial.latency_ms is None:
+        if not trial.ok:
             continue
-        by_question.setdefault(trial.entry_id, []).append(trial.latency_ms)
+        latency = trial.generation_ms
+        if latency is None:
+            latency = trial.latency_ms
+        by_question.setdefault(trial.entry_id, []).append(latency)
     return [statistics.mean(values) for values in by_question.values()]
 
 
