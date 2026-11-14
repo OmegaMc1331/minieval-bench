@@ -1,9 +1,9 @@
 from __future__ import annotations
 
 import re
-from typing import Literal
+from typing import Any, Literal
 
-from pydantic import BaseModel, ConfigDict, Field, ValidationInfo, field_validator
+from pydantic import BaseModel, ConfigDict, Field, ValidationInfo, field_validator, model_validator
 
 MetricName = Literal["exact_match", "contains", "regex"]
 
@@ -17,6 +17,7 @@ class Defaults(BaseModel):
     timeout: float = Field(default=60, gt=0)
     max_tokens: int | None = Field(default=None, ge=1)
     temperature: float | None = None
+    shuffle: bool = False
 
 
 class ModelConfig(BaseModel):
@@ -75,6 +76,8 @@ class TrialResult(BaseModel):
     error_type: str | None
     error_message: str | None
     passed: bool | None
+    queue_ms: float | None = None
+    plan_index: int | None = None
 
 
 class ModelStats(BaseModel):
@@ -92,6 +95,33 @@ class ModelStats(BaseModel):
     output_tokens: int | None
     cost_usd: float | None
     errors: dict[str, int]
+    answer_accuracy: float | None = None
+    evaluation_coverage: float | None = None
+    overall_pass_rate: float | None = None
+    incorrect: int | None = None
+    median_queue_ms: float | None = None
+    input_tokens_reported: int | None = None
+    output_tokens_reported: int | None = None
+    cost_reported: int | None = None
+
+    @model_validator(mode="before")
+    @classmethod
+    def derive_legacy_fields(cls, data: Any) -> Any:
+        if not isinstance(data, dict):
+            return data
+        if data.get("answer_accuracy") is None and data.get("score") is not None:
+            data["answer_accuracy"] = data["score"]
+        requests = data.get("requests")
+        if requests:
+            if data.get("evaluation_coverage") is None and data.get("evaluable") is not None:
+                data["evaluation_coverage"] = data["evaluable"] / requests
+            if data.get("overall_pass_rate") is None and data.get("passed") is not None:
+                data["overall_pass_rate"] = data["passed"] / requests
+        succeeded = data.get("succeeded")
+        passed = data.get("passed")
+        if data.get("incorrect") is None and succeeded is not None and passed is not None:
+            data["incorrect"] = succeeded - passed
+        return data
 
 
 class Manifest(BaseModel):
@@ -105,3 +135,6 @@ class Manifest(BaseModel):
     dataset_sha256: str
     dataset_entries: int
     models: list[ModelConfig]
+    duration_seconds: float | None = None
+    trial_seeds: list[int] | None = None
+    shuffle: bool | None = None
