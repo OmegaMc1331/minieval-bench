@@ -125,6 +125,14 @@ class DatasetEntry(BaseModel):
                 compile(self.tests, f"{self.id}:tests", "exec")
             except SyntaxError as exc:
                 raise ValueError(f"invalid tests module: {exc}") from exc
+            from minieval_bench.evaluation.code import expected_test_names
+
+            try:
+                test_names = expected_test_names(self.tests)
+            except ValueError as exc:
+                raise ValueError(str(exc)) from exc
+            if not test_names:
+                raise ValueError("tests module must define at least one test_ function")
         return self
 
 
