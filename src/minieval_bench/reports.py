@@ -129,7 +129,8 @@ def markdown_report(manifest: Manifest, stats: list[ModelStats]) -> str:
         "| Model | Requests | OK | Failed | Success | Accuracy | Coverage | Overall |"
         " Median gen (ms) | P95 gen (ms) | Median eval (ms) | Median total (ms) |"
         " Queue (ms) | In tokens | Out tokens | Cost (USD) |",
-        "| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |",
+        "| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |"
+        " --- | --- | --- | --- | --- |",
     ]
     for model_stats in stats:
         cells = [

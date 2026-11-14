@@ -219,7 +219,10 @@ class SlowEvaluatorRunner:
 
 def test_run_trial_separates_generation_and_evaluation_latency():
     model = ModelConfig(name="mock-a", provider="mock")
-    planned = make_planned(model, make_entry(metric="code_tests", tests="def test_add():\n    assert True"))
+    entry = make_entry(
+        metric="code_tests", tests="def test_add():\n    assert True"
+    )
+    planned = make_planned(model, entry)
 
     trial = run_trial(
         MockProvider(model), planned, queued_at=0.0, code_runner=SlowEvaluatorRunner()
@@ -261,7 +264,7 @@ def test_compute_stats_uses_generation_latency_for_new_runs():
 
 
 def test_compute_stats_falls_back_to_legacy_latency():
-    legacy = trial = run_trial(
+    legacy = run_trial(
         MockProvider(ModelConfig(name="mock-a", provider="mock")),
         make_planned(ModelConfig(name="mock-a", provider="mock"), make_entry()),
         queued_at=0.0,
