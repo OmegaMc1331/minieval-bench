@@ -2,6 +2,37 @@
 
 All notable changes to this project are documented in this file. The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and the project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.3.0] - 2026-11-14
+
+### Added
+
+- LLM-as-a-judge evaluation (`metric: judge`): configurable judge through the existing LiteLLM provider stack (or a deterministic mock judge), YAML rubrics with weighted criteria and scales, validated JSON verdicts (missing or out-of-bounds scores become evaluation failures, never zero scores), overall scores computed by MiniEval from normalized weighted criteria, repeated judgments with per-criterion means and standard deviations, and full transparency (judge model, rubric fingerprint and version, judgment counts, failures, judge tokens and cost).
+- Judge budgets: planned judge calls are computed and printed before the run; `max_calls` refuses to start when the plan exceeds the cap and stops judging when reached; `budget_usd` requires judge pricing (unknown pricing refuses the run instead of guessing) and stops judging once the accumulated cost crosses it.
+- Judge calibration (`calibrate` command): scores a calibration dataset with expected per-criterion scores and reports mean error and disagreements per criterion.
+- Blind pairwise comparison (`pairwise` command): two anonymized responses judged twice with positions swapped, verdicts mapped back to the original models, contradictions kept as disagreements, standalone HTML page with side-by-side responses and per-model tallies. No Elo or tournament ranking.
+- Structured output evaluation (`metric: json_schema`): JSON Schema Draft 2020-12 validation with a documented extraction policy (direct parse, else first balanced block), detailed `path: message` errors including resolved paths for missing required properties, remote `$ref` URLs rejected at dataset load.
+- Code evaluation (`metric: code_tests`): generated Python executed only inside a restricted Docker container (no network, read-only root filesystem, non-root user, all capabilities dropped, no-new-privileges, memory/cpu/pid limits, noexec tmpfs, automatic removal, host-side wall-clock timeout); submission and tests piped over stdin without shell interpolation; per-test alarm timeouts; timeouts, runtime errors, syntax errors and resource-limit kills distinguished; Docker unavailability reported as `unavailable`, never executed on the host and never counted as a model failure.
+- Statistical analysis: per-model dispersion (mean, median, standard deviation, min, max, count) and percentile bootstrap confidence intervals over question-level units (repeats averaged first), plus paired per-question score differences in run comparisons; no interval with fewer than two questions and no significance claims.
+- `evaluate` command: re-evaluates stored responses with new evaluators without calling the candidate models, writing to a separate directory and leaving originals untouched.
+- Evaluation records on every trial (evaluator, status, verdict, score, details, tokens, cost) with evaluator summaries and separated evaluation costs in JSON, Markdown and the HTML report; five new HTML report sections (evaluation overview, judge scores, structured output, code evaluation, statistical analysis) and evaluation details in the trial explorer.
+- Offline examples: judge benchmark with rubric and calibration dataset, JSON Schema benchmark, containerized Python code benchmark.
+
+### Improved
+
+- Dataset entries: `reference` is now required only for the metrics that use it; `json_schema` and `tests` fields validated at load (schema validity, test module syntax).
+- Docker integration tests (8 scenarios including infinite loop, memory bomb, blocked network and blocked filesystem writes) run only with `MINIEVAL_DOCKER_TESTS=1` and a reachable daemon; the standard suite stays fully offline.
+
+### Security
+
+- Untrusted model responses are framed as data in judge and pairwise prompts and cannot alter the rubric or output format; the residual prompt-injection risk is documented.
+- Generated code never executes on the host; no sandbox bypass exists, and Docker-dependent tests are opt-in.
+- Judge and pairwise error messages pass through the same secret-masking pipeline as provider errors.
+
+### Compatibility
+
+- All v0.2.0 (and earlier) commands, configuration, datasets, results files, reports, CSV, history and comparisons are unchanged; every schema change is additive with safe defaults, and old results render in the new HTML report with unavailable data shown as `n/a`.
+- Subjective judge scores never replace or alter `answer_accuracy` or any existing statistic.
+
 ## [0.2.0] - 2026-11-14
 
 ### Added
