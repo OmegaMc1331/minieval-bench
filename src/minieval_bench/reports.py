@@ -8,7 +8,7 @@ from pathlib import Path
 from rich.table import Table
 
 from minieval_bench import __version__
-from minieval_bench.html_report import write_html_report
+from minieval_bench.html_report import build_analysis, write_html_report
 from minieval_bench.models import (
     BenchmarkConfig,
     DatasetEntry,
@@ -46,6 +46,8 @@ def build_manifest(
             for repeat in range(config.defaults.repeats)
         ],
         shuffle=config.defaults.shuffle,
+        evaluators=config.evaluators.model_dump(mode="json") if config.evaluators else None,
+        statistics=config.statistics.model_dump(mode="json"),
     )
 
 
@@ -65,10 +67,13 @@ def write_reports(
     manifest_path.write_text(
         json.dumps(manifest.model_dump(mode="json"), indent=2) + "\n", encoding="utf-8"
     )
+    statistics, evaluator_summaries = build_analysis(manifest, trials)
     payload = {
         "manifest": manifest.model_dump(mode="json"),
         "stats": [item.model_dump(mode="json") for item in stats],
         "trials": [trial.model_dump(mode="json") for trial in trials],
+        "statistics": statistics,
+        "evaluators": evaluator_summaries,
     }
     if dataset is not None:
         payload["dataset"] = [entry.model_dump(mode="json") for entry in dataset]
@@ -167,9 +172,31 @@ def markdown_report(manifest: Manifest, stats: list[ModelStats]) -> str:
         "",
         "Token and cost totals are sums over the requests that reported them; "
         "`value (r/s)` marks a partial total covering r of s successful requests. "
-        "`n/a` marks an unavailable value, as opposed to a real zero.",
+        "`n/a` marks a value that is unavailable, as opposed to a real zero.",
         "",
     ]
+
+    evaluation_rows = [
+        model_stats
+        for model_stats in stats
+        if model_stats.evaluator_failed
+        or model_stats.evaluator_unavailable
+        or model_stats.evaluation_cost_usd is not None
+    ]
+    if evaluation_rows:
+        lines += [
+            "## Evaluation overhead",
+            "",
+            "| Model | Evaluator failures | Unavailable | Evaluation cost (USD) |",
+            "| --- | --- | --- | --- |",
+        ]
+        for model_stats in evaluation_rows:
+            lines.append(
+                f"| {model_stats.model} | {model_stats.evaluator_failed} "
+                f"| {model_stats.evaluator_unavailable} "
+                f"| {cell(model_stats.evaluation_cost_usd, '.6f')} |"
+            )
+        lines.append("")
 
     error_rows = [
         (model_stats.model, error, str(count))

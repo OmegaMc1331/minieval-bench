@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import statistics
 from pathlib import Path
 from typing import Annotated
 
@@ -12,6 +13,19 @@ from rich.table import Table
 from minieval_bench import __version__
 from minieval_bench.comparison import build_comparison_payload
 from minieval_bench.config import ConfigError, DatasetError, load_config, load_dataset
+from minieval_bench.evaluation import (
+    build_code_runner_from_config,
+    build_judge_from_config,
+    evaluate_response,
+    plan_judge_calls,
+)
+from minieval_bench.evaluation.judge import JudgeError, load_calibration
+from minieval_bench.evaluation.pairwise import (
+    PairwiseError,
+    build_pairwise_judge,
+    pairwise_summary,
+    run_pairwise,
+)
 from minieval_bench.exports import write_trials_csv
 from minieval_bench.history import find_runs
 from minieval_bench.html_report import render_standalone, write_html_report
@@ -95,12 +109,20 @@ def run(
 ) -> None:
     """Run a benchmark and write JSON, Markdown and HTML reports."""
     benchmark_config, entries = load_benchmark(config)
+    try:
+        check_judge_budget(benchmark_config, entries)
+    except JudgeError as exc:
+        console.print(f"[red]{exc}[/red]")
+        raise typer.Exit(1) from exc
 
     try:
         trials, started_at, duration_seconds = run_benchmark(benchmark_config, entries)
     except KeyboardInterrupt:
         console.print("[red]Interrupted. No reports were written.[/red]")
         raise typer.Exit(130) from None
+    except JudgeError as exc:
+        console.print(f"[red]{exc}[/red]")
+        raise typer.Exit(1) from exc
     stats = compute_stats(trials)
     manifest = build_manifest(benchmark_config, entries, started_at, duration_seconds)
     written = write_reports(
@@ -124,6 +146,25 @@ def run(
             "[red]Every request failed. Check provider credentials and configuration.[/red]"
         )
         raise typer.Exit(1)
+
+
+def check_judge_budget(benchmark_config, entries) -> None:
+    planned = plan_judge_calls(benchmark_config, entries)
+    if planned == 0:
+        return
+    judge = build_judge_from_config(benchmark_config, benchmark_config.defaults.seed)
+    refusal = judge.plan_check(planned) if judge else None
+    if refusal:
+        raise JudgeError(refusal)
+    console.print(
+        f"Judge enabled: {planned} call(s) planned "
+        f"({benchmark_config.evaluators.judge.repeats} judgment(s) per response)"
+    )
+    if judge and not judge.pricing_known():
+        console.print(
+            "[yellow]Judge pricing is unknown: "
+            "the cost of evaluation cannot be guaranteed.[/yellow]"
+        )
 
 
 @app.command()
@@ -253,6 +294,248 @@ def history(
             str(record.path),
         )
     console.print(table)
+
+
+@app.command()
+def evaluate(
+    input_dir: Annotated[
+        Path, typer.Option("--input", help="Directory containing a results.json file.")
+    ],
+    config: ConfigArg,
+    output_dir: Annotated[
+        Path | None,
+        typer.Option("--output", help="Directory for the re-evaluated reports."),
+    ] = None,
+) -> None:
+    """Re-evaluate stored responses without calling the candidate models."""
+    benchmark_config, entries = load_benchmark(config)
+    try:
+        manifest, _, trials = load_results(input_dir)
+    except (FileNotFoundError, json.JSONDecodeError, ValidationError) as exc:
+        console.print(f"[red]Cannot read results from {input_dir}: {exc}[/red]")
+        raise typer.Exit(1) from exc
+
+    entries_by_id = {entry.id: entry for entry in entries}
+    missing = sorted({trial.entry_id for trial in trials} - set(entries_by_id))
+    if missing:
+        console.print(
+            f"[yellow]{len(missing)} trial entry id(s) not in the dataset are kept unchanged: "
+            f"{', '.join(missing[:5])}{'…' if len(missing) > 5 else ''}[/yellow]"
+        )
+
+    try:
+        judge = build_judge_from_config(benchmark_config, benchmark_config.defaults.seed)
+    except JudgeError as exc:
+        console.print(f"[red]{exc}[/red]")
+        raise typer.Exit(1) from exc
+    if judge is not None:
+        planned = sum(
+            1
+            for trial in trials
+            if trial.ok and entries_by_id.get(trial.entry_id) is not None
+            and entries_by_id[trial.entry_id].metric == "judge"
+        ) * benchmark_config.evaluators.judge.repeats
+        refusal = judge.plan_check(planned)
+        if refusal:
+            console.print(f"[red]{refusal}[/red]")
+            raise typer.Exit(1)
+        console.print(f"Judge enabled: {planned} call(s) planned for re-evaluation")
+    code_runner = build_code_runner_from_config(benchmark_config)
+
+    reevaluated = []
+    for trial in trials:
+        entry = entries_by_id.get(trial.entry_id)
+        if not trial.ok or entry is None:
+            reevaluated.append(trial)
+            continue
+        outcome = evaluate_response(entry, trial.response or "", judge, code_runner)
+        reevaluated.append(
+            trial.model_copy(update={"evaluation": outcome, "passed": outcome.passed})
+        )
+
+    stats = compute_stats(reevaluated)
+    destination = output_dir or input_dir / "reevaluated"
+    written = write_reports(destination, manifest, stats, reevaluated, dataset=entries)
+
+    console.print(stats_table(stats))
+    for path in written:
+        console.print(f"wrote {path}")
+    console.print(f"original results in {input_dir} were left untouched")
+
+
+@app.command()
+def pairwise(
+    input_dir: Annotated[
+        Path, typer.Option("--input", help="Directory containing a results.json file.")
+    ],
+    config: ConfigArg,
+    models_arg: Annotated[
+        list[str] | None,
+        typer.Option("--models", help="The two model names to compare (repeat the option)."),
+    ] = None,
+    output: Annotated[
+        Path | None,
+        typer.Option("--output", help="Path of the pairwise HTML report."),
+    ] = None,
+) -> None:
+    """Compare two models blindly, with position swapping, on a completed run."""
+    benchmark_config, entries = load_benchmark(config)
+    try:
+        manifest, _, trials = load_results(input_dir)
+    except (FileNotFoundError, json.JSONDecodeError, ValidationError) as exc:
+        console.print(f"[red]Cannot read results from {input_dir}: {exc}[/red]")
+        raise typer.Exit(1) from exc
+
+    judge_config = benchmark_config.evaluators.judge if benchmark_config.evaluators else None
+    if judge_config is None:
+        console.print("[red]pairwise requires an evaluators.judge block in the config.[/red]")
+        raise typer.Exit(1)
+
+    available_models = sorted({trial.model for trial in trials})
+    if models_arg:
+        if len(models_arg) != 2 or any(name not in available_models for name in models_arg):
+            console.print(
+                f"[red]--models needs exactly two names among: {', '.join(available_models)}[/red]"
+            )
+            raise typer.Exit(1)
+        model_a, model_b = models_arg
+    else:
+        if len(available_models) < 2:
+            console.print("[red]the run contains fewer than two models.[/red]")
+            raise typer.Exit(1)
+        model_a, model_b = available_models[:2]
+
+    try:
+        judge = build_pairwise_judge(judge_config, benchmark_config.defaults.seed)
+    except PairwiseError as exc:
+        console.print(f"[red]{exc}[/red]")
+        raise typer.Exit(1) from exc
+
+    prompt_by_entry = {entry.id: entry.prompt for entry in entries}
+    records = run_pairwise(
+        trials, prompt_by_entry, model_a, model_b, judge, benchmark_config.defaults.seed
+    )
+    summary = pairwise_summary(records, model_a, model_b)
+    payload = {
+        "kind": "pairwise",
+        "manifest": manifest.model_dump(mode="json"),
+        "modelA": model_a,
+        "modelB": model_b,
+        "summary": summary,
+        "records": [record.model_dump(mode="json") for record in records],
+    }
+
+    html_path = output or input_dir / "pairwise.html"
+    html_path.parent.mkdir(parents=True, exist_ok=True)
+    html_path.write_text(
+        render_standalone(payload, "pairwise.html", "pairwise.js"), encoding="utf-8"
+    )
+    json_path = html_path.with_suffix(".json")
+    json_path.write_text(json.dumps(payload, indent=2) + "\n", encoding="utf-8")
+
+    table = Table(title=f"Blind pairwise: {model_a} vs {model_b}")
+    table.add_column("Measure")
+    table.add_column("Count", justify="right")
+    for measure, count in summary.items():
+        table.add_row(measure, str(count))
+    console.print(table)
+    console.print(f"wrote {html_path}")
+    console.print(f"wrote {json_path}")
+
+
+@app.command()
+def calibrate(
+    config: ConfigArg,
+    output: Annotated[
+        Path, typer.Option("--output", help="Path of the calibration JSON report.")
+    ] = Path("calibration.json"),
+) -> None:
+    """Compare judge verdicts against a calibration dataset with expected scores."""
+    benchmark_config, _ = load_benchmark(config)
+    judge_config = benchmark_config.evaluators.judge if benchmark_config.evaluators else None
+    if judge_config is None:
+        console.print("[red]calibrate requires an evaluators.judge block in the config.[/red]")
+        raise typer.Exit(1)
+    if not judge_config.calibration:
+        console.print("[red]calibrate requires judge.calibration pointing to a JSONL file.[/red]")
+        raise typer.Exit(1)
+
+    try:
+        items = load_calibration(Path(judge_config.calibration))
+        judge = build_judge_from_config(benchmark_config, benchmark_config.defaults.seed)
+        if judge is None:
+            raise JudgeError("judge is not configured")
+    except JudgeError as exc:
+        console.print(f"[red]{exc}[/red]")
+        raise typer.Exit(1) from exc
+
+    criterion_ids = [criterion.id for criterion in judge.rubric.criteria]
+    unknown = sorted(
+        {key for item in items for key in item.expected} - set(criterion_ids)
+    )
+    if unknown:
+        console.print(
+            f"[red]calibration references unknown criteria: {', '.join(unknown)}[/red]"
+        )
+        raise typer.Exit(1)
+
+    results = []
+    for item in items:
+        outcome = judge.evaluate(item.prompt, None, item.response)
+        judged = {}
+        if outcome.status == "completed" and outcome.details:
+            judged = {
+                criterion_id: values["mean"]
+                for criterion_id, values in outcome.details.get("criteria", {}).items()
+            }
+        results.append(
+            {
+                "id": item.id,
+                "expected": item.expected,
+                "judged": judged,
+                "status": outcome.status,
+                "error": outcome.error_message,
+            }
+        )
+
+    by_criterion = {}
+    for criterion_id in criterion_ids:
+        differences = []
+        for item, result in zip(items, results, strict=True):
+            if criterion_id in result["judged"] and criterion_id in item.expected:
+                differences.append(result["judged"][criterion_id] - item.expected[criterion_id])
+        by_criterion[criterion_id] = {
+            "items": len(differences),
+            "mean_error": statistics.mean(differences) if differences else None,
+            "disagreements": sum(1 for difference in differences if abs(difference) >= 1),
+        }
+
+    report = {
+        "judge_model": judge.judge_model_name(),
+        "rubric_fingerprint": judge.rubric.fingerprint(),
+        "criteria": by_criterion,
+        "items": results,
+        "note": (
+            "Agreement with calibration references does not prove judge validity outside "
+            "these examples; disagreement highlights specific weaknesses."
+        ),
+    }
+    output.write_text(json.dumps(report, indent=2) + "\n", encoding="utf-8")
+
+    table = Table(title="Judge calibration")
+    table.add_column("Criterion")
+    table.add_column("Items", justify="right")
+    table.add_column("Mean error", justify="right")
+    table.add_column("Disagreements", justify="right")
+    for criterion_id, values in by_criterion.items():
+        table.add_row(
+            criterion_id,
+            str(values["items"]),
+            "n/a" if values["mean_error"] is None else f"{values['mean_error']:+.2f}",
+            str(values["disagreements"]),
+        )
+    console.print(table)
+    console.print(f"wrote {output}")
 
 
 def load_benchmark(config_path: Path) -> tuple[BenchmarkConfig, list[DatasetEntry]]:
