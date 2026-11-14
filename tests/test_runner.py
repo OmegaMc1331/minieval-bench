@@ -2,15 +2,28 @@ from __future__ import annotations
 
 from pathlib import Path
 
+import pytest
+
 from minieval_bench.config import load_config, load_dataset
 from minieval_bench.models import DatasetEntry, ModelConfig
 from minieval_bench.providers import MockProvider, ProviderResponse
-from minieval_bench.runner import run_benchmark, run_trial
+from minieval_bench.runner import (
+    PlannedTrial,
+    build_plan,
+    repeat_seed,
+    run_benchmark,
+    run_trial,
+)
 
 
 class FailingProvider:
-    def complete(self, prompt: str, system: str | None) -> ProviderResponse:
+    def complete(self, prompt: str, system: str | None, seed: int) -> ProviderResponse:
         raise RuntimeError("provider exploded")
+
+
+class InterruptingProvider:
+    def complete(self, prompt: str, system: str | None, seed: int) -> ProviderResponse:
+        raise KeyboardInterrupt
 
 
 def load_written(config_path: Path):
@@ -19,8 +32,12 @@ def load_written(config_path: Path):
 
 
 def make_entry(**overrides) -> DatasetEntry:
-    fields = {"id": "e1", "prompt": "p", "metric": "regex", "reference": "^mock-[0-9a-f]{8}$"}
-    return DatasetEntry(**fields, **overrides)
+    fields = {"id": "e1", "prompt": "p", "metric": "regex", "reference": "^mock-[0-9a-f]+$"}
+    return DatasetEntry(**{**fields, **overrides})
+
+
+def make_planned(model: ModelConfig, entry: DatasetEntry, repeat: int = 0) -> PlannedTrial:
+    return PlannedTrial(model=model, entry=entry, repeat=repeat, seed=repeat_seed(1, repeat))
 
 
 def test_run_benchmark_runs_every_combination(write_benchmark, mock_config, valid_entries):
@@ -30,7 +47,7 @@ def test_run_benchmark_runs_every_combination(write_benchmark, mock_config, vali
     ]
     config, entries = load_written(write_benchmark(mock_config, valid_entries))
 
-    trials, _ = run_benchmark(config, entries, show_progress=False)
+    trials, _, _ = run_benchmark(config, entries, show_progress=False)
 
     assert len(trials) == 2 * 3 * 2
     assert all(trial.ok for trial in trials)
@@ -42,8 +59,11 @@ def test_run_benchmark_is_deterministic_with_same_seed(write_benchmark, mock_con
 
     def collect():
         config, entries = load_written(config_path)
-        trials, _ = run_benchmark(config, entries, show_progress=False)
-        return [(trial.model, trial.entry_id, trial.repeat, trial.passed) for trial in trials]
+        trials, _, _ = run_benchmark(config, entries, show_progress=False)
+        return [
+            (trial.model, trial.entry_id, trial.repeat, trial.passed, trial.response)
+            for trial in trials
+        ]
 
     assert collect() == collect()
 
@@ -52,16 +72,38 @@ def test_run_benchmark_changes_with_seed(write_benchmark, mock_config, valid_ent
     def responses(seed: int) -> set[str | None]:
         mock_config["defaults"]["seed"] = seed
         config, entries = load_written(write_benchmark(mock_config, valid_entries))
-        trials, _ = run_benchmark(config, entries, show_progress=False)
+        trials, _, _ = run_benchmark(config, entries, show_progress=False)
         return {trial.response for trial in trials}
 
     assert responses(1) != responses(2)
 
 
+def test_run_benchmark_uses_distinct_seeds_per_repeat(write_benchmark, mock_config, valid_entries):
+    config, entries = load_written(write_benchmark(mock_config, valid_entries))
+
+    trials, _, _ = run_benchmark(config, entries, show_progress=False)
+
+    responses_by_repeat: dict[int, set[str]] = {0: set(), 1: set()}
+    for trial in trials:
+        responses_by_repeat[trial.repeat].add(trial.response)
+    assert responses_by_repeat[0].isdisjoint(responses_by_repeat[1])
+
+
+def test_run_benchmark_records_queue_delay_and_plan_index(
+    write_benchmark, mock_config, valid_entries
+):
+    config, entries = load_written(write_benchmark(mock_config, valid_entries))
+
+    trials, _, _ = run_benchmark(config, entries, show_progress=False)
+
+    assert all(trial.queue_ms is not None and trial.queue_ms >= 0 for trial in trials)
+    assert sorted(trial.plan_index for trial in trials) == list(range(len(trials)))
+
+
 def test_run_benchmark_sorts_trials(write_benchmark, mock_config, valid_entries):
     config, entries = load_written(write_benchmark(mock_config, valid_entries))
 
-    trials, _ = run_benchmark(config, entries, show_progress=False)
+    trials, _, _ = run_benchmark(config, entries, show_progress=False)
 
     keys = [(trial.model, trial.entry_id, trial.repeat) for trial in trials]
     assert keys == sorted(keys)
@@ -74,7 +116,7 @@ def test_run_benchmark_priced_model_reports_cost(write_benchmark, mock_config, v
     ]
     config, entries = load_written(write_benchmark(mock_config, valid_entries))
 
-    trials, _ = run_benchmark(config, entries, show_progress=False)
+    trials, _, _ = run_benchmark(config, entries, show_progress=False)
 
     by_model: dict[str, list] = {}
     for trial in trials:
@@ -83,25 +125,80 @@ def test_run_benchmark_priced_model_reports_cost(write_benchmark, mock_config, v
     assert all(trial.cost_usd is not None and trial.cost_usd > 0 for trial in by_model["priced"])
 
 
+def test_repeat_seed_is_stable_and_distinct_per_repeat():
+    assert repeat_seed(42, 0) == repeat_seed(42, 0)
+    assert repeat_seed(42, 0) != repeat_seed(42, 1)
+    assert repeat_seed(42, 1) != repeat_seed(43, 1)
+    assert 0 <= repeat_seed(42, 0) < 2**32
+
+
+def test_build_plan_is_reproducible_from_config_and_seed(
+    write_benchmark, mock_config, valid_entries
+):
+    config_path = write_benchmark(mock_config, valid_entries)
+
+    def plan_keys():
+        config, entries = load_written(config_path)
+        return [
+            (item.model.name, item.entry.id, item.repeat, item.seed, item.plan_index)
+            for item in build_plan(config, entries)
+        ]
+
+    assert plan_keys() == plan_keys()
+
+
+def test_build_plan_shuffles_deterministically(write_benchmark, mock_config, valid_entries):
+    mock_config["defaults"]["shuffle"] = True
+    shuffled_path = write_benchmark(mock_config, valid_entries)
+    shuffled_config, entries = load_written(shuffled_path)
+    shuffled_first = build_plan(shuffled_config, entries)
+    shuffled_second = build_plan(shuffled_config, entries)
+
+    mock_config["defaults"]["shuffle"] = False
+    ordered_config, _ = load_written(write_benchmark(mock_config, valid_entries))
+    ordered = build_plan(ordered_config, entries)
+
+    def keys(plan):
+        return [(item.model.name, item.entry.id, item.repeat) for item in plan]
+
+    assert keys(shuffled_first) == keys(shuffled_second)
+    assert keys(shuffled_first) != keys(ordered)
+    assert sorted(item.plan_index for item in shuffled_first) == list(range(len(shuffled_first)))
+
+
+def test_run_benchmark_propagates_user_interrupt(
+    write_benchmark, mock_config, valid_entries, monkeypatch
+):
+    monkeypatch.setattr(
+        "minieval_bench.runner.build_provider", lambda model: InterruptingProvider()
+    )
+    config, entries = load_written(write_benchmark(mock_config, valid_entries))
+
+    with pytest.raises(KeyboardInterrupt):
+        run_benchmark(config, entries, show_progress=False)
+
+
 def test_run_trial_records_provider_failure():
     model = ModelConfig(name="broken", provider="mock")
-    entry = make_entry()
+    planned = make_planned(model, make_entry())
 
-    trial = run_trial(FailingProvider(), model, entry, repeat=0)
+    trial = run_trial(FailingProvider(), planned, queued_at=0.0)
 
     assert not trial.ok
     assert trial.error_type == "RuntimeError"
-    assert trial.error_message == "provider exploded"
+    assert "provider exploded" in trial.error_message
     assert trial.passed is None
     assert trial.response is None
     assert trial.latency_ms >= 0
+    assert trial.queue_ms >= 0
+    assert trial.plan_index == 0
 
 
 def test_run_trial_evaluates_successful_response():
     model = ModelConfig(name="mock-a", provider="mock")
-    entry = make_entry()
+    planned = make_planned(model, make_entry())
 
-    trial = run_trial(MockProvider(model, seed=1), model, entry, repeat=0)
+    trial = run_trial(MockProvider(model), planned, queued_at=0.0)
 
     assert trial.ok
     assert trial.passed is True
