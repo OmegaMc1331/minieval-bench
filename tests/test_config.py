@@ -83,6 +83,13 @@ def test_load_config_rejects_invalid_repeats(write_benchmark, mock_config, valid
         load_config(config_path)
 
 
+def test_load_config_accepts_shuffle(write_benchmark, mock_config, valid_entries):
+    mock_config["defaults"]["shuffle"] = True
+    config_path = write_benchmark(mock_config, valid_entries)
+
+    assert load_config(config_path).defaults.shuffle is True
+
+
 def test_load_config_resolves_relative_dataset_path(tmp_path, mock_config):
     dataset_path = tmp_path / "data.jsonl"
     dataset_path.write_text(

@@ -16,7 +16,7 @@ def test_version_flag():
     result = runner.invoke(app, ["--version"], env=WIDE)
 
     assert result.exit_code == 0
-    assert "0.1.0" in result.output
+    assert "0.1.1" in result.output
 
 
 def test_validate_accepts_example_config():
@@ -82,3 +82,17 @@ def test_report_fails_without_results(tmp_path):
 
     assert result.exit_code == 1
     assert "Cannot read report" in result.output
+
+
+def test_report_reads_v010_results(tmp_path):
+    from test_reports import OLD_RESULTS
+
+    results_dir = tmp_path / "legacy"
+    results_dir.mkdir()
+    (results_dir / "results.json").write_text(json.dumps(OLD_RESULTS), encoding="utf-8")
+
+    result = runner.invoke(app, ["report", "--input", str(results_dir)], env=WIDE)
+
+    assert result.exit_code == 0
+    assert "old-mock" in result.output
+    assert "n/a" in result.output

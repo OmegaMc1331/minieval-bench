@@ -81,9 +81,13 @@ def run(
     """Run a benchmark and write JSON and Markdown reports."""
     benchmark_config, entries = load_benchmark(config)
 
-    trials, started_at = run_benchmark(benchmark_config, entries)
+    try:
+        trials, started_at, duration_seconds = run_benchmark(benchmark_config, entries)
+    except KeyboardInterrupt:
+        console.print("[red]Interrupted. No reports were written.[/red]")
+        raise typer.Exit(130) from None
     stats = compute_stats(trials)
-    manifest = build_manifest(benchmark_config, entries, started_at)
+    manifest = build_manifest(benchmark_config, entries, started_at, duration_seconds)
     written = write_reports(output_dir, manifest, stats, trials)
 
     console.print(stats_table(stats))
@@ -120,8 +124,12 @@ def report(
     manifest_table.add_row("MiniEval version", manifest.minieval_version)
     manifest_table.add_row("Created (UTC)", manifest.created_at_utc)
     manifest_table.add_row("Seed", str(manifest.seed))
+    manifest_table.add_row("Trial seeds", format_seeds(manifest.trial_seeds))
     manifest_table.add_row("Repeats", str(manifest.repeats))
     manifest_table.add_row("Concurrency", str(manifest.concurrency))
+    manifest_table.add_row("Shuffle", "n/a" if manifest.shuffle is None else str(manifest.shuffle))
+    manifest_table.add_row("Duration (s)", "n/a" if manifest.duration_seconds is None
+                           else format(manifest.duration_seconds, ".1f"))
     manifest_table.add_row("Dataset", manifest.dataset_path)
     manifest_table.add_row("Dataset sha256", manifest.dataset_sha256)
     manifest_table.add_row("Entries", str(manifest.dataset_entries))
@@ -141,6 +149,12 @@ def load_benchmark(config_path: Path) -> tuple[BenchmarkConfig, list[DatasetEntr
         console.print(f"[red]{exc}[/red]")
         raise typer.Exit(1) from exc
     return benchmark_config, entries
+
+
+def format_seeds(trial_seeds: list[int] | None) -> str:
+    if trial_seeds is None:
+        return "n/a"
+    return ", ".join(str(seed) for seed in trial_seeds)
 
 
 def models_table(benchmark_config: BenchmarkConfig) -> Table:
