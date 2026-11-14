@@ -43,6 +43,7 @@ function fmtCost(value) {
 const payload = JSON.parse(document.getElementById("report-data").textContent);
 const stats = payload.stats || [];
 const manifest = payload.manifest || {};
+const evaluations = payload.evaluations || [];
 
 const trials = (payload.trials || []).map((row, index) => ({
   model: payload.models[row[0]],
@@ -58,7 +59,13 @@ const trials = (payload.trials || []).map((row, index) => ({
   errorType: row[10] === null ? null : payload.errorTypes[row[10]],
   response: payload.responses[index],
   errorMessage: payload.errorMessages[index],
+  evaluation: evaluations[index] || null,
 }));
+
+const hasEvaluator = (name) => evaluations.some((item) => item && item.evaluator === name);
+const judgeTrials = trials.filter(
+  (trial) => trial.evaluation && trial.evaluation.evaluator === "judge",
+);
 
 const datasetById = payload.dataset
   ? Object.fromEntries(payload.dataset.map((entry) => [entry.id, entry]))
@@ -684,7 +691,7 @@ function renderTrials(section) {
         }),
       ),
       factRow("Status", trial.ok ? "ok" : "failed"),
-      factRow("Evaluation", trial.ok ? String(trial.passed) : "not evaluable"),
+      evaluationNodes(trial),
       factRow("Latency", fmtMs(trial.latencyMs) + " ms"),
       factRow("Queue delay", fmtMs(trial.queueMs) + " ms"),
       factRow("Tokens", `in ${fmtInt(trial.inputTokens)} / out ${fmtInt(trial.outputTokens)}`),
@@ -717,6 +724,87 @@ function renderTrials(section) {
 
 function factRow(label, value) {
   return h("div", null, h("span", { class: "field-label", text: label + ": " }), h("span", { class: "mono", text: value }));
+}
+
+function evaluationNodes(trial) {
+  const evaluation = trial.evaluation;
+  if (!evaluation) {
+    return [factRow("Evaluation", trial.ok ? String(trial.passed) : "not evaluable")];
+  }
+  const nodes = [
+    factRow("Evaluator", evaluation.evaluator),
+    factRow("Evaluation status", evaluation.status),
+  ];
+  if (evaluation.score !== null && evaluation.score !== undefined) {
+    nodes.push(factRow("Score", fmtScore(evaluation.score)));
+  }
+  if (evaluation.verdict) {
+    nodes.push(factRow("Verdict", evaluation.verdict));
+  }
+  if (evaluation.error_message) {
+    nodes.push(factRow("Evaluation error", truncate(evaluation.error_message, 200)));
+  }
+  const details = evaluation.details || {};
+
+  if (evaluation.evaluator === "judge" && details.criteria) {
+    nodes.push(h("p", { class: "field-label", text: "Judge criteria" }));
+    nodes.push(
+      h("table", { class: "criteria-table" },
+        h("thead", null,
+          h("tr", null,
+            h("th", { text: "Criterion" }),
+            h("th", { class: "num", text: "Mean" }),
+            h("th", { class: "num", text: "Std" }),
+            h("th", { class: "num", text: "Scale" }),
+          ),
+        ),
+        h("tbody", null,
+          Object.entries(details.criteria).map(([criterionId, values]) =>
+            h("tr", null,
+              h("td", { class: "mono", text: criterionId }),
+              h("td", { class: "num", text: values.mean.toFixed(2) }),
+              h("td", { class: "num", text: values.std === null ? "n/a" : values.std.toFixed(2) }),
+              h("td", { class: "num mono", text: `${values.scale[0]} – ${values.scale[1]}` }),
+            ),
+          ),
+        ),
+      ),
+    );
+    if (details.reason) {
+      nodes.push(h("p", { class: "field-label", text: "Judge reason" }));
+      nodes.push(h("pre", { text: details.reason }));
+    }
+    nodes.push(factRow("Judgments", `${details.judgments} valid / ${details.judge_failures || 0} failed`));
+  }
+
+  if (evaluation.evaluator === "json_schema") {
+    nodes.push(factRow("JSON valid", String(details.json_valid)));
+    if (details.errors && details.errors.length > 0) {
+      nodes.push(h("p", { class: "field-label", text: "Validation errors" }));
+      nodes.push(h("pre", {
+        text: details.errors.map((error) => `${error.path}: ${error.message}`).join("\n"),
+      }));
+    }
+  }
+
+  if (evaluation.evaluator === "code_tests") {
+    if (details.overall && details.overall !== "completed") {
+      nodes.push(factRow("Code outcome", details.overall));
+    }
+    if (details.submission_error) {
+      nodes.push(h("p", { class: "field-label", text: "Submission error" }));
+      nodes.push(h("pre", { text: details.submission_error }));
+    }
+    if (details.tests && details.tests.length > 0) {
+      nodes.push(factRow("Tests", `${details.passed}/${details.total} passed`));
+      nodes.push(h("pre", {
+        text: details.tests
+          .map((test) => `${test.status.padEnd(7)} ${test.name}${test.error ? ` — ${test.error}` : ""}`)
+          .join("\n"),
+      }));
+    }
+  }
+  return nodes;
 }
 
 function selectControl(label, options, onChange) {
@@ -865,11 +953,393 @@ function renderMetadata(section) {
   );
 }
 
+function fmtScore(value) {
+  return value === null || value === undefined ? "n/a" : value.toFixed(3);
+}
+
+function renderEvaluationOverview(section) {
+  const summaries = payload.evaluatorSummaries;
+  if (!summaries || summaries.length === 0) {
+    section.append(h("p", { class: "empty-note", text: "No evaluation summaries available." }));
+    return;
+  }
+  section.append(
+    h("div", { class: "table-scroll" },
+      h("table", null,
+        h("thead", null,
+          h("tr", null,
+            ["Evaluator", "Trials", "Completed", "Passed", "Incorrect", "Eval failures",
+              "Unavailable", "Binary pass rate", "Mean score", "Eval cost (USD)"].map((label, index) =>
+              h("th", { class: index > 0 ? "num" : null, text: label }),
+            ),
+          ),
+        ),
+        h("tbody", null,
+          summaries.map((item) =>
+            h("tr", null,
+              h("td", { class: "mono", text: item.evaluator }),
+              h("td", { class: "num", text: fmtInt(item.trials) }),
+              h("td", { class: "num", text: fmtInt(item.completed) }),
+              h("td", { class: "num", text: fmtInt(item.passed) }),
+              h("td", { class: "num", text: fmtInt(item.failed_binary) }),
+              h("td", { class: "num", text: fmtInt(item.evaluator_failed) }),
+              h("td", { class: "num", text: fmtInt(item.evaluator_unavailable) }),
+              h("td", { class: "num", text: fmtRate(item.binary_pass_rate) }),
+              h("td", { class: "num", text: item.mean_score === null ? "n/a" : item.mean_score.toFixed(3) }),
+              h("td", { class: "num", text: item.cost_usd === null ? "n/a" : item.cost_usd.toFixed(6) }),
+            ),
+          ),
+        ),
+      ),
+    ),
+    h("p", {
+      class: "section-note",
+      text: "Each evaluator measures something different (exact correctness, subjective quality, " +
+        "structural conformance, functional tests). Their scores use different scales and are " +
+        "never merged into a single ranking.",
+    }),
+  );
+}
+
+function judgeModelBlocks() {
+  const byModel = new Map();
+  for (const trial of judgeTrials) {
+    if (!byModel.has(trial.model)) byModel.set(trial.model, []);
+    byModel.get(trial.model).push(trial);
+  }
+  return [...byModel.entries()].map(([model, trialsForModel]) => {
+    const completed = trialsForModel.filter(
+      (trial) => trial.evaluation.status === "completed" && trial.evaluation.score !== null
+    );
+    const scores = completed.map((trial) => trial.evaluation.score);
+    const criteria = {};
+    for (const trial of completed) {
+      const details = trial.evaluation.details || {};
+      for (const [criterionId, values] of Object.entries(details.criteria || {})) {
+        if (!criteria[criterionId]) criteria[criterionId] = { values: [], scale: values.scale };
+        criteria[criterionId].values.push(values.mean);
+      }
+    }
+    const cost = trialsForModel.reduce(
+      (total, trial) => total + (trial.evaluation.cost_usd || 0), 0
+    );
+    return { model, trialsForModel, completed, scores, criteria, cost };
+  });
+}
+
+function renderJudgeScores(section) {
+  if (judgeTrials.length === 0) {
+    section.append(h("p", { class: "empty-note", text: "No judge evaluations in this run." }));
+    return;
+  }
+  section.append(
+    h("p", {
+      class: "section-note",
+      text: "Judge scores are subjective opinions of the configured judge model, normalized to " +
+        "[0, 1] per criterion then weighted. They are kept separate from exact-match accuracy, " +
+        "response length is not treated as a quality indicator, and they do not represent an " +
+        "objective or universal measure of quality.",
+    }),
+    h("div", null, judgeModelBlocks().map((block) => judgeBlock(block))),
+  );
+}
+
+function judgeBlock(block) {
+  const blockNode = h("div", { class: "multi-chart" },
+    h("h4", { text: block.model }),
+    h("p", {
+      class: "sub",
+      text: `${block.completed.length} judged response(s)` +
+        (block.cost ? ` — judge cost ${block.cost.toFixed(6)} USD` : ""),
+    }),
+  );
+  if (block.scores.length === 0) {
+    blockNode.append(h("p", { class: "empty-note", text: "No completed judgment." }));
+    return blockNode;
+  }
+  const mean = block.scores.reduce((sum, value) => sum + value, 0) / block.scores.length;
+  const std = block.scores.length >= 2
+    ? Math.sqrt(
+        block.scores.reduce((sum, value) => sum + (value - mean) ** 2, 0) /
+          (block.scores.length - 1),
+      )
+    : null;
+  blockNode.append(
+    h("p", { class: "sub", text: `overall ${mean.toFixed(3)}${std === null ? "" : ` ± ${std.toFixed(3)}`} (normalized)` }),
+    scoreHistogram(block.scores),
+    h("table", { class: "criteria-table" },
+      h("thead", null,
+        h("tr", null,
+          h("th", { text: "Criterion" }),
+          h("th", { class: "num", text: "Mean" }),
+          h("th", { class: "num", text: "Std" }),
+          h("th", { class: "num", text: "Scale" }),
+        ),
+      ),
+      h("tbody", null,
+        Object.entries(block.criteria).map(([criterionId, data]) => {
+          const criterionMean = data.values.reduce((sum, value) => sum + value, 0) / data.values.length;
+          const criterionStd = data.values.length >= 2
+            ? Math.sqrt(
+                data.values.reduce((sum, value) => sum + (value - criterionMean) ** 2, 0) /
+                  (data.values.length - 1),
+              )
+            : null;
+          return h("tr", null,
+            h("td", { class: "mono", text: criterionId }),
+            h("td", { class: "num", text: criterionMean.toFixed(2) }),
+            h("td", { class: "num", text: criterionStd === null ? "n/a" : criterionStd.toFixed(2) }),
+            h("td", { class: "num mono", text: `${data.scale[0]} – ${data.scale[1]}` }),
+          );
+        }),
+      ),
+    ),
+  );
+  return blockNode;
+}
+
+function scoreHistogram(values) {
+  const bins = Array.from({ length: 10 }, () => 0);
+  for (const value of values) {
+    let index = Math.floor(value * 10);
+    if (index >= 10) index = 9;
+    bins[index] += 1;
+  }
+  const max = Math.max(...bins);
+  return h("div", null,
+    h("div", { class: "histogram", role: "img", "aria-label": "Judge score distribution" },
+      bins.map((count, index) =>
+        h("div", {
+          class: "bin",
+          tabindex: "0",
+          style: `height:${Math.max(1, (count / max) * 100)}%`,
+          title: `[${(index / 10).toFixed(1)}, ${((index + 1) / 10).toFixed(1)}): ${count} response(s)`,
+        }),
+      ),
+    ),
+    h("div", { class: "histogram-axis" },
+      h("span", { text: "0.0" }),
+      h("span", { text: "normalized judge score" }),
+      h("span", { text: "1.0" }),
+    ),
+  );
+}
+
+function renderStructured(section) {
+  const structured = trials.filter(
+    (trial) => trial.evaluation && trial.evaluation.evaluator === "json_schema",
+  );
+  if (structured.length === 0) {
+    section.append(h("p", { class: "empty-note", text: "No json_schema evaluations in this run." }));
+    return;
+  }
+  const validCount = structured.filter(
+    (trial) => trial.evaluation.details && trial.evaluation.details.json_valid,
+  ).length;
+  const passedCount = structured.filter((trial) => trial.evaluation.passed === true).length;
+
+  const pathCounts = new Map();
+  for (const trial of structured) {
+    for (const error of (trial.evaluation.details || {}).errors || []) {
+      pathCounts.set(error.path, (pathCounts.get(error.path) || 0) + 1);
+    }
+  }
+  const topPaths = [...pathCounts.entries()].sort((a, b) => b[1] - a[1]).slice(0, 10);
+
+  const byModel = new Map();
+  for (const trial of structured) {
+    if (!byModel.has(trial.model)) byModel.set(trial.model, { total: 0, valid: 0, passed: 0 });
+    const entry = byModel.get(trial.model);
+    entry.total += 1;
+    if (trial.evaluation.details && trial.evaluation.details.json_valid) entry.valid += 1;
+    if (trial.evaluation.passed === true) entry.passed += 1;
+  }
+
+  section.append(
+    h("div", { class: "table-scroll" },
+      h("table", null,
+        h("thead", null,
+          h("tr", null,
+            h("th", { text: "Model" }),
+            h("th", { class: "num", text: "Responses" }),
+            h("th", { class: "num", text: "Valid JSON" }),
+            h("th", { class: "num", text: "Schema conformant" }),
+          ),
+        ),
+        h("tbody", null,
+          [...byModel.entries()].map(([model, entry]) =>
+            h("tr", null,
+              h("td", { class: "mono", text: model }),
+              h("td", { class: "num", text: fmtInt(entry.total) }),
+              h("td", { class: "num", text: `${fmtInt(entry.valid)} (${(entry.valid / entry.total * 100).toFixed(0)}%)` }),
+              h("td", { class: "num", text: `${fmtInt(entry.passed)} (${(entry.passed / entry.total * 100).toFixed(0)}%)` }),
+            ),
+          ),
+        ),
+      ),
+    ),
+    h("p", {
+      class: "section-note",
+      text: `${validCount}/${structured.length} responses parsed as valid JSON; ` +
+        `${passedCount}/${structured.length} conformed to their schema. Structural conformance ` +
+        "does not mean the content is factually correct.",
+    }),
+    topPaths.length > 0
+      ? h("div", { class: "table-scroll" },
+          h("table", null,
+            h("thead", null,
+              h("tr", null,
+                h("th", { text: "Invalid property" }),
+                h("th", { class: "num", text: "Occurrences" }),
+              ),
+            ),
+            h("tbody", null,
+              topPaths.map(([path, count]) =>
+                h("tr", null,
+                  h("td", { class: "mono", text: path }),
+                  h("td", { class: "num", text: String(count) }),
+                ),
+              ),
+            ),
+          ),
+        )
+      : null,
+  );
+}
+
+function renderCodeEvaluation(section) {
+  const codeTrials = trials.filter(
+    (trial) => trial.evaluation && trial.evaluation.evaluator === "code_tests",
+  );
+  if (codeTrials.length === 0) {
+    section.append(h("p", { class: "empty-note", text: "No code evaluations in this run." }));
+    return;
+  }
+  const byModel = new Map();
+  for (const trial of codeTrials) {
+    if (!byModel.has(trial.model)) {
+      byModel.set(trial.model, { total: 0, scores: [], timeouts: 0, submissionErrors: 0, unavailable: 0 });
+    }
+    const entry = byModel.get(trial.model);
+    entry.total += 1;
+    const evaluation = trial.evaluation;
+    if (evaluation.status === "unavailable" || evaluation.status === "failed") {
+      entry.unavailable += 1;
+    } else if (evaluation.details && evaluation.details.overall === "timeout") {
+      entry.timeouts += 1;
+    } else if (evaluation.details && evaluation.details.overall === "submission_error") {
+      entry.submissionErrors += 1;
+    } else if (evaluation.score !== null && evaluation.score !== undefined) {
+      entry.scores.push(evaluation.score);
+    }
+  }
+  section.append(
+    h("div", { class: "table-scroll" },
+      h("table", null,
+        h("thead", null,
+          h("tr", null,
+            ["Model", "Responses", "Mean test pass rate", "Timeouts", "Submission errors",
+              "Infrastructure"].map((label, index) =>
+              h("th", { class: index > 0 ? "num" : null, text: label }),
+            ),
+          ),
+        ),
+        h("tbody", null,
+          [...byModel.entries()].map(([model, entry]) =>
+            h("tr", null,
+              h("td", { class: "mono", text: model }),
+              h("td", { class: "num", text: fmtInt(entry.total) }),
+              h("td", {
+                class: "num",
+                text: entry.scores.length === 0
+                  ? "n/a"
+                  : (entry.scores.reduce((sum, value) => sum + value, 0) / entry.scores.length * 100).toFixed(1) + "%",
+              }),
+              h("td", { class: "num", text: fmtInt(entry.timeouts) }),
+              h("td", { class: "num", text: fmtInt(entry.submissionErrors) }),
+              h("td", { class: "num", text: fmtInt(entry.unavailable) }),
+            ),
+          ),
+        ),
+      ),
+    ),
+    h("p", {
+      class: "section-note",
+      text: "Code was executed only inside a restricted container. Infrastructure failures and " +
+        "unavailable runtimes are never counted as functional failures of the model.",
+    }),
+  );
+}
+
+function renderStatisticalAnalysis(section) {
+  const data = payload.statistics;
+  if (!data || data.length === 0) {
+    section.append(h("p", { class: "empty-note", text: "No statistical analysis available." }));
+    return;
+  }
+  const resampling = data[0].resampling || {};
+  const metricRows = [];
+  for (const entry of data) {
+    for (const metricKey of ["pass_rate", "latency_ms", "judge_score"]) {
+      const metric = entry[metricKey];
+      if (!metric || metric.summary.count === 0) continue;
+      metricRows.push({ model: entry.model, metricKey, metric });
+    }
+  }
+  section.append(
+    h("div", { class: "table-scroll" },
+      h("table", null,
+        h("thead", null,
+          h("tr", null,
+            ["Model", "Metric", "Mean", "Median", "Std", "Min", "Max", "95% CI", "Units"].map(
+              (label, index) => h("th", { class: index > 1 ? "num" : null, text: label }),
+            ),
+          ),
+        ),
+        h("tbody", null,
+          metricRows.map(({ model, metricKey, metric }) => {
+            const format = (value) =>
+              value === null || value === undefined
+                ? "n/a"
+                : metricKey === "latency_ms" ? value.toFixed(1) : value.toFixed(3);
+            const ci = metric.ci95.low === null || metric.ci95.low === undefined
+              ? "n/a"
+              : `[${format(metric.ci95.low)}, ${format(metric.ci95.high)}]`;
+            return h("tr", null,
+              h("td", { class: "mono", text: model }),
+              h("td", { text: metricKey }),
+              h("td", { class: "num", text: format(metric.summary.mean) }),
+              h("td", { class: "num", text: format(metric.summary.median) }),
+              h("td", { class: "num", text: format(metric.summary.std) }),
+              h("td", { class: "num", text: format(metric.summary.min) }),
+              h("td", { class: "num", text: format(metric.summary.max) }),
+              h("td", { class: "num", text: ci }),
+              h("td", { class: "num", text: fmtInt(metric.summary.count) }),
+            );
+          }),
+        ),
+      ),
+    ),
+    h("p", {
+      class: "section-note",
+      text: `Bootstrap: percentile method, ${fmtInt(resampling.iterations)} iterations, ` +
+        `${Math.round((resampling.confidence_level || 0.95) * 100)}% confidence, resampling unit: ` +
+        `${resampling.unit}. Confidence intervals describe the observed data; overlapping or ` +
+        "non-overlapping intervals are not a significance test between models.",
+    }),
+  );
+}
+
 const SECTIONS = [
   ["overview", "Overview", renderOverview],
+  ["evaluation-overview", "Evaluation overview", renderEvaluationOverview],
+  ["judge", "Judge scores", renderJudgeScores],
+  ["structured", "Structured output", renderStructured],
+  ["code-eval", "Code evaluation", renderCodeEvaluation],
   ["performance", "Model performance", renderPerformance],
   ["latency", "Latency", renderLatency],
   ["tokens-cost", "Tokens & cost", renderTokensCost],
+  ["statistics", "Statistical analysis", renderStatisticalAnalysis],
   ["trials", "Trial explorer", renderTrials],
   ["errors", "Errors", renderErrors],
   ["metadata", "Run metadata", renderMetadata],

@@ -1,0 +1,2 @@
+{"id": "cal-1", "prompt": "What is 2 + 2? Answer with the number only.", "response": "4", "expected": {"correctness": 5, "relevance": 5, "instruction_following": 5, "clarity": 5}}
+{"id": "cal-2", "prompt": "Name a prime number.", "response": "8 is a prime number.", "expected": {"correctness": 1, "relevance": 4, "instruction_following": 4, "clarity": 4}}

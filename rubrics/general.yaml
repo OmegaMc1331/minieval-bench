@@ -1,0 +1,19 @@
+version: 1
+criteria:
+  - id: correctness
+    description: Factual accuracy and completeness with respect to the question
+    scale_min: 1
+    scale_max: 5
+    weight: 2
+  - id: relevance
+    description: The response addresses the question asked
+    scale_min: 1
+    scale_max: 5
+  - id: instruction_following
+    description: The response respects the instructions and the requested format
+    scale_min: 1
+    scale_max: 5
+  - id: clarity
+    description: The response is understandable and organized
+    scale_min: 1
+    scale_max: 5

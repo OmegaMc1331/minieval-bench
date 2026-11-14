@@ -1,0 +1,11 @@
+benchmark: json-schema-demo
+dataset: ../datasets/json-schema.jsonl
+
+defaults:
+  repeats: 1
+  concurrency: 2
+  seed: 42
+
+models:
+  - name: mock-candidate
+    provider: mock

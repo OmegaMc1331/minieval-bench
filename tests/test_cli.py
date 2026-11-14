@@ -16,7 +16,7 @@ def test_version_flag():
     result = runner.invoke(app, ["--version"], env=WIDE)
 
     assert result.exit_code == 0
-    assert "0.2.0" in result.output
+    assert "0.3.0" in result.output
 
 
 def test_validate_accepts_example_config():

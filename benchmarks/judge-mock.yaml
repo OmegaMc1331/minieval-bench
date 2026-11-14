@@ -1,0 +1,23 @@
+benchmark: judge-mock-demo
+dataset: ../datasets/judge-mock.jsonl
+
+defaults:
+  repeats: 2
+  concurrency: 2
+  seed: 42
+
+models:
+  - name: mock-candidate
+    provider: mock
+  - name: mock-priced
+    provider: mock
+    input_cost_per_1m: 0.5
+    output_cost_per_1m: 1.5
+
+evaluators:
+  judge:
+    provider: mock
+    repeats: 2
+    rubric: ../rubrics/general.yaml
+    input_cost_per_1m: 0.5
+    output_cost_per_1m: 1.5

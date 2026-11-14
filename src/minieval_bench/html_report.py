@@ -4,7 +4,17 @@ import json
 from importlib.resources import files
 from pathlib import Path
 
-from minieval_bench.models import DatasetEntry, Manifest, ModelStats, TrialResult
+from minieval_bench.evaluation.statistics import (
+    analyze_model_statistics,
+    summarize_evaluations,
+)
+from minieval_bench.models import (
+    DatasetEntry,
+    Manifest,
+    ModelStats,
+    StatisticsConfig,
+    TrialResult,
+)
 
 TEMPLATE_MARKERS = {
     "styles": "/*__STYLES__*/",
@@ -25,6 +35,15 @@ def render_standalone(payload: dict, template_name: str, script_name: str) -> st
     return html.replace(TEMPLATE_MARKERS["script"], read_template(script_name))
 
 
+def build_analysis(
+    manifest: Manifest, trials: list[TrialResult]
+) -> tuple[list[dict], list[dict]]:
+    statistics_config = StatisticsConfig.model_validate(manifest.statistics or {})
+    statistics = analyze_model_statistics(trials, statistics_config, manifest.seed)
+    evaluator_summaries = summarize_evaluations(trials)
+    return statistics, evaluator_summaries
+
+
 def write_html_report(
     output_path: Path,
     manifest: Manifest,
@@ -32,7 +51,10 @@ def write_html_report(
     trials: list[TrialResult],
     dataset: list[DatasetEntry] | None = None,
 ) -> None:
-    payload = build_run_payload(manifest, stats, trials, dataset)
+    statistics, evaluator_summaries = build_analysis(manifest, trials)
+    payload = build_run_payload(
+        manifest, stats, trials, dataset, statistics, evaluator_summaries
+    )
     output_path.parent.mkdir(parents=True, exist_ok=True)
     standalone = render_standalone(payload, "report.html", "dashboard.js")
     output_path.write_text(standalone, encoding="utf-8")
@@ -43,6 +65,8 @@ def build_run_payload(
     stats: list[ModelStats],
     trials: list[TrialResult],
     dataset: list[DatasetEntry] | None,
+    statistics: list[dict] | None = None,
+    evaluator_summaries: list[dict] | None = None,
 ) -> dict:
     models = sorted({trial.model for trial in trials} | {item.model for item in stats})
     entry_ids = sorted({trial.entry_id for trial in trials})
@@ -78,7 +102,13 @@ def build_run_payload(
         "trials": compact_trials,
         "responses": [trial.response for trial in trials],
         "errorMessages": [trial.error_message for trial in trials],
+        "evaluations": [
+            None if trial.evaluation is None else trial.evaluation.model_dump(mode="json")
+            for trial in trials
+        ],
         "dataset": (
             None if dataset is None else [entry.model_dump(mode="json") for entry in dataset]
         ),
+        "statistics": statistics or None,
+        "evaluatorSummaries": evaluator_summaries or None,
     }

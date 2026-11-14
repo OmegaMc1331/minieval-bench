@@ -12,7 +12,11 @@ from datetime import UTC, datetime
 
 from rich.progress import Progress
 
-from minieval_bench.metrics import evaluate
+from minieval_bench.evaluation import (
+    build_code_runner_from_config,
+    build_judge_from_config,
+    evaluate_response,
+)
 from minieval_bench.models import (
     BenchmarkConfig,
     DatasetEntry,
@@ -67,13 +71,20 @@ def run_benchmark(
     started_at = datetime.now(UTC)
     started = time.perf_counter()
     providers = {model.name: build_provider(model) for model in config.models}
+    judge = build_judge_from_config(config, config.defaults.seed)
+    code_runner = build_code_runner_from_config(config)
     plan = build_plan(config, entries)
 
     trials: list[TrialResult] = []
     executor = ThreadPoolExecutor(max_workers=config.defaults.concurrency)
     futures = [
         executor.submit(
-            run_trial, providers[item.model.name], item, time.perf_counter()
+            run_trial,
+            providers[item.model.name],
+            item,
+            time.perf_counter(),
+            judge,
+            code_runner,
         )
         for item in plan
     ]
@@ -98,7 +109,11 @@ def run_benchmark(
 
 
 def run_trial(
-    provider: MockProvider | LitellmProvider, planned: PlannedTrial, queued_at: float
+    provider: MockProvider | LitellmProvider,
+    planned: PlannedTrial,
+    queued_at: float,
+    judge=None,
+    code_runner=None,
 ) -> TrialResult:
     started = time.perf_counter()
     queue_ms = (started - queued_at) * 1000
@@ -123,6 +138,9 @@ def run_trial(
             queue_ms=queue_ms,
             plan_index=planned.plan_index,
         )
+    outcome = evaluate_response(
+        planned.entry, response.text, judge=judge, code_runner=code_runner
+    )
     return TrialResult(
         model=planned.model.name,
         entry_id=planned.entry.id,
@@ -135,10 +153,17 @@ def run_trial(
         cost_usd=response.cost_usd,
         error_type=None,
         error_message=None,
-        passed=evaluate(planned.entry.metric, response.text, planned.entry.reference),
+        passed=outcome.passed,
         queue_ms=queue_ms,
         plan_index=planned.plan_index,
+        evaluation=outcome,
     )
+
+
+def is_binary_evaluated(trial: TrialResult) -> bool:
+    if trial.evaluation is None:
+        return True
+    return trial.evaluation.status == "completed" and trial.evaluation.passed is not None
 
 
 def compute_stats(trials: list[TrialResult]) -> list[ModelStats]:
@@ -150,9 +175,10 @@ def compute_stats(trials: list[TrialResult]) -> list[ModelStats]:
     for model in sorted(grouped):
         model_trials = grouped[model]
         succeeded = [trial for trial in model_trials if trial.ok]
+        binary = [trial for trial in succeeded if is_binary_evaluated(trial)]
         latencies = [trial.latency_ms for trial in succeeded]
         queue_delays = [trial.queue_ms for trial in model_trials if trial.queue_ms is not None]
-        passed = sum(1 for trial in succeeded if trial.passed)
+        passed = sum(1 for trial in binary if trial.passed)
         errors: dict[str, int] = {}
         for trial in model_trials:
             if trial.error_type:
@@ -164,7 +190,17 @@ def compute_stats(trials: list[TrialResult]) -> list[ModelStats]:
             [trial.output_tokens for trial in succeeded]
         )
         cost_usd, cost_reported = available_total([trial.cost_usd for trial in succeeded])
-        answer_accuracy = passed / len(succeeded) if succeeded else None
+        evaluated = [trial for trial in model_trials if trial.evaluation is not None]
+        evaluation_input_tokens, _ = available_total(
+            [trial.evaluation.input_tokens for trial in evaluated]
+        )
+        evaluation_output_tokens, _ = available_total(
+            [trial.evaluation.output_tokens for trial in evaluated]
+        )
+        evaluation_cost, evaluation_cost_reported = available_total(
+            [trial.evaluation.cost_usd for trial in evaluated]
+        )
+        answer_accuracy = passed / len(binary) if binary else None
         stats.append(
             ModelStats(
                 model=model,
@@ -172,7 +208,7 @@ def compute_stats(trials: list[TrialResult]) -> list[ModelStats]:
                 succeeded=len(succeeded),
                 failed=len(model_trials) - len(succeeded),
                 success_rate=len(succeeded) / len(model_trials),
-                evaluable=len(succeeded),
+                evaluable=len(binary),
                 passed=passed,
                 score=answer_accuracy,
                 median_latency_ms=statistics.median(latencies) if latencies else None,
@@ -182,13 +218,23 @@ def compute_stats(trials: list[TrialResult]) -> list[ModelStats]:
                 cost_usd=cost_usd,
                 errors=errors,
                 answer_accuracy=answer_accuracy,
-                evaluation_coverage=len(succeeded) / len(model_trials),
+                evaluation_coverage=len(binary) / len(model_trials),
                 overall_pass_rate=passed / len(model_trials),
-                incorrect=len(succeeded) - passed,
+                incorrect=len(binary) - passed,
                 median_queue_ms=statistics.median(queue_delays) if queue_delays else None,
                 input_tokens_reported=input_reported,
                 output_tokens_reported=output_reported,
                 cost_reported=cost_reported,
+                evaluator_failed=sum(
+                    1 for trial in evaluated if trial.evaluation.status == "failed"
+                ),
+                evaluator_unavailable=sum(
+                    1 for trial in evaluated if trial.evaluation.status == "unavailable"
+                ),
+                evaluation_input_tokens=evaluation_input_tokens,
+                evaluation_output_tokens=evaluation_output_tokens,
+                evaluation_cost_usd=evaluation_cost,
+                evaluation_cost_reported=evaluation_cost_reported,
             )
         )
     return stats

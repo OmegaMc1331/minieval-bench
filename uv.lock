@@ -1051,9 +1051,10 @@ wheels = [
 
 [[package]]
 name = "minieval-bench"
-version = "0.2.0"
+version = "0.3.0"
 source = { editable = "." }
 dependencies = [
+    { name = "jsonschema" },
     { name = "litellm" },
     { name = "pydantic" },
     { name = "pyyaml" },
@@ -1069,6 +1070,7 @@ dev = [
 
 [package.metadata]
 requires-dist = [
+    { name = "jsonschema", specifier = ">=4.21" },
     { name = "litellm", specifier = ">=1.63" },
     { name = "pydantic", specifier = ">=2.7" },
     { name = "pyyaml", specifier = ">=6.0" },

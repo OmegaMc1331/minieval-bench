@@ -1,0 +1,19 @@
+benchmark: code-python-demo
+dataset: ../datasets/code-python.jsonl
+
+defaults:
+  repeats: 1
+  concurrency: 1
+  seed: 42
+
+models:
+  - name: mock-candidate
+    provider: mock
+
+evaluators:
+  code:
+    runtime: docker
+    image: python:3.12-slim
+    timeout_seconds: 20
+    per_test_timeout_seconds: 5
+    memory_mb: 256

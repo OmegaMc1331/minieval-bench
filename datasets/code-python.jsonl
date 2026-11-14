@@ -1,0 +1,2 @@
+{"id": "add-function", "prompt": "Write a Python function named add(a, b) that returns the sum of a and b.", "metric": "code_tests", "tests": "def test_add_integers():\n    assert add(2, 3) == 5\n\ndef test_add_negative():\n    assert add(-1, 1) == 0\n"}
+{"id": "double-function", "prompt": "Write a Python function named double(x) that returns x multiplied by two.", "metric": "code_tests", "tests": "def test_double():\n    assert double(3) == 6\n"}
