@@ -9,6 +9,7 @@ from minieval_bench.models import Manifest, ModelConfig, ModelStats
 from minieval_bench.reports import (
     build_manifest,
     dataset_fingerprint,
+    load_dataset_snapshot,
     load_results,
     markdown_report,
     write_reports,
@@ -140,10 +141,28 @@ def test_markdown_report_renders_error_breakdown():
 def test_load_results_roundtrip(written_reports):
     output_dir, manifest, stats, _ = written_reports
 
-    loaded_manifest, loaded_stats = load_results(output_dir)
+    loaded_manifest, loaded_stats, loaded_trials = load_results(output_dir)
 
     assert loaded_manifest == manifest
     assert loaded_stats == stats
+    assert len(loaded_trials) > 0
+
+
+def test_dataset_snapshot_roundtrip(tmp_path, write_benchmark, mock_config, valid_entries):
+    config, entries = load_written(write_benchmark(mock_config, valid_entries))
+    trials, started_at, duration = run_benchmark(config, entries, show_progress=False)
+    manifest = build_manifest(config, entries, started_at, duration)
+    stats = compute_stats(trials)
+
+    with_snapshot = tmp_path / "with-snapshot"
+    write_reports(with_snapshot, manifest, stats, trials, dataset=entries)
+    without_snapshot = tmp_path / "without-snapshot"
+    write_reports(without_snapshot, manifest, stats, trials, dataset=None)
+
+    assert [entry.id for entry in load_dataset_snapshot(with_snapshot)] == [
+        entry.id for entry in entries
+    ]
+    assert load_dataset_snapshot(without_snapshot) is None
 
 
 def test_load_results_derives_indicators_from_v010_reports(tmp_path):
@@ -151,7 +170,7 @@ def test_load_results_derives_indicators_from_v010_reports(tmp_path):
     results_dir.mkdir()
     (results_dir / "results.json").write_text(json.dumps(OLD_RESULTS), encoding="utf-8")
 
-    manifest, stats = load_results(results_dir)
+    manifest, stats, _ = load_results(results_dir)
 
     assert manifest.minieval_version == "0.1.0"
     assert manifest.duration_seconds is None
