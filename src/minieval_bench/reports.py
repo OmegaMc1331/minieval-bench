@@ -8,6 +8,7 @@ from pathlib import Path
 from rich.table import Table
 
 from minieval_bench import __version__
+from minieval_bench.html_report import write_html_report
 from minieval_bench.models import (
     BenchmarkConfig,
     DatasetEntry,
@@ -49,7 +50,12 @@ def build_manifest(
 
 
 def write_reports(
-    output_dir: Path, manifest: Manifest, stats: list[ModelStats], trials: list[TrialResult]
+    output_dir: Path,
+    manifest: Manifest,
+    stats: list[ModelStats],
+    trials: list[TrialResult],
+    dataset: list[DatasetEntry] | None = None,
+    html: bool = True,
 ) -> list[Path]:
     output_dir.mkdir(parents=True, exist_ok=True)
     manifest_path = output_dir / "manifest.json"
@@ -64,19 +70,39 @@ def write_reports(
         "stats": [item.model_dump(mode="json") for item in stats],
         "trials": [trial.model_dump(mode="json") for trial in trials],
     }
+    if dataset is not None:
+        payload["dataset"] = [entry.model_dump(mode="json") for entry in dataset]
     results_path.write_text(json.dumps(payload, indent=2) + "\n", encoding="utf-8")
     report_path.write_text(markdown_report(manifest, stats), encoding="utf-8")
-    return [manifest_path, results_path, report_path]
+    written = [manifest_path, results_path, report_path]
+    if html:
+        html_path = output_dir / "report.html"
+        write_html_report(html_path, manifest, stats, trials, dataset)
+        written.append(html_path)
+    return written
 
 
-def load_results(input_dir: Path) -> tuple[Manifest, list[ModelStats]]:
+def load_results(
+    input_dir: Path,
+) -> tuple[Manifest, list[ModelStats], list[TrialResult]]:
     results_path = input_dir / "results.json"
     if not results_path.is_file():
         raise FileNotFoundError(f"no results.json in {input_dir}")
     payload = json.loads(results_path.read_text(encoding="utf-8"))
     manifest = Manifest.model_validate(payload["manifest"])
     stats = [ModelStats.model_validate(item) for item in payload["stats"]]
-    return manifest, stats
+    trials = [TrialResult.model_validate(item) for item in payload.get("trials", [])]
+    return manifest, stats, trials
+
+
+def load_dataset_snapshot(input_dir: Path) -> list[DatasetEntry] | None:
+    results_path = input_dir / "results.json"
+    if not results_path.is_file():
+        return None
+    payload = json.loads(results_path.read_text(encoding="utf-8"))
+    if payload.get("dataset") is None:
+        return None
+    return [DatasetEntry.model_validate(item) for item in payload["dataset"]]
 
 
 def markdown_report(manifest: Manifest, stats: list[ModelStats]) -> str:
