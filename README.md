@@ -1,6 +1,6 @@
 # MiniEval
 
-MiniEval is a lightweight Python framework for benchmarking and comparing language models. It runs the same dataset against several models through LiteLLM, scores responses with deterministic metrics, and produces reproducible JSON and Markdown reports. A deterministic mock provider is included, so a full benchmark can run without any API key.
+MiniEval is a lightweight Python framework for benchmarking and comparing language models. It runs the same dataset against several models through LiteLLM, scores responses with deterministic metrics, and produces reproducible JSON, Markdown and interactive HTML reports, including side-by-side comparison of several runs. A deterministic mock provider is included, so a full benchmark can run without any API key.
 
 ## Features
 
@@ -15,7 +15,10 @@ MiniEval is a lightweight Python framework for benchmarking and comparing langua
 - Bounded retries for transient provider errors only, honoring `Retry-After`
 - Error messages sanitized before export; no API keys, tokens or credentials in reports
 - JSON and Markdown reports with a run manifest (version, UTC date, seed, per-repeat seeds, dataset fingerprint)
-- CLI with Rich table output: `validate`, `run`, `report`
+- Self-contained interactive HTML report: charts, trial explorer, light and dark themes, no server, no network
+- Side-by-side comparison of several runs with methodological warnings
+- CSV export of individual trials and a local history of past runs
+- CLI with Rich table output: `validate`, `run`, `report`, `compare`, `export`, `history`
 
 ## Requirements
 
@@ -200,18 +203,25 @@ Provider errors are recorded per trial with their exception type and a sanitized
 minieval-bench validate --config benchmarks/example.yaml
 minieval-bench run --config benchmarks/example.yaml --output results/
 minieval-bench report --input results/
+minieval-bench report --input results/ --format html --output results/report.html
+minieval-bench compare --run results/run-a --run results/run-b --output comparison.html
+minieval-bench export --input results/ --format csv --output results/trials.csv
+minieval-bench history --root results/
 minieval-bench --version
 ```
 
 `run` exits with code 1 when every request failed, so it can gate CI jobs, and with code 130 when interrupted (Ctrl+C); pending requests are cancelled and no reports are written.
 
+`run` writes `report.html` next to the other reports; pass `--no-html` to skip it. Pass `--snapshot` to embed the dataset (prompts and references) in `results.json` and the HTML report, so the trial explorer can display them.
+
 ## Reports
 
-`run` writes three files:
+`run` writes four files:
 
 - `manifest.json`: effective parameters, models, MiniEval version, UTC date, global and per-repeat seeds, shuffle flag, duration, dataset path and SHA-256 fingerprint
-- `results.json`: manifest, per-model statistics and every individual trial (response, latency, queue delay, tokens, cost, sanitized errors, plan index)
+- `results.json`: manifest, per-model statistics and every individual trial (response, latency, queue delay, tokens, cost, sanitized errors, plan index), plus the dataset snapshot when `--snapshot` was used
 - `report.md`: the same statistics as Markdown
+- `report.html`: the interactive report described below
 
 Example `report.md`:
 
@@ -246,7 +256,57 @@ Reports produced by v0.1.0 remain readable: indicators that can be derived from 
 
 ### Confidentiality
 
-Error messages are sanitized, but model responses and prompts are exported verbatim because scoring requires them. A results directory can therefore contain private data from your datasets and conversations. Review the files before sharing or publishing them; they are excluded from the repository by `.gitignore`.
+Error messages are sanitized, but model responses and prompts are exported verbatim because scoring requires them. A results directory can therefore contain private data from your datasets and conversations, and the same applies to the HTML and CSV exports. Review every file before sharing or publishing it; results directories are excluded from the repository by `.gitignore`.
+
+## Interactive HTML report
+
+`run` produces `report.html` alongside the other reports, and `report --format html` regenerates it from any results directory. The file is fully self-contained: styles, scripts and data are embedded in a single HTML file that opens directly in a browser, with no server, no network access and no CDN dependency. All rendering happens locally, and untrusted content (prompts, responses, error messages, model names) is inserted as text only, never as HTML.
+
+Sections:
+
+1. **Overview** — benchmark, date, models, planned and succeeded requests, duration, dataset fingerprint, version.
+2. **Model performance** — selectable indicator (accuracy, overall pass rate, success rate), exact values table.
+3. **Latency** — per-model histograms of individual request latencies with bin counts, model filter, queue delay reported separately.
+4. **Tokens & cost** — stacked input/output bars with coverage, cost comparison distinguishing known, partially known, zero and unavailable costs.
+5. **Trial explorer** — every trial in a searchable, filterable, sortable, paginated table; selecting a row shows the full response, error, and the prompt and reference when the run used `--snapshot`.
+6. **Errors** — breakdown by type and model, list of failed requests.
+7. **Run metadata** — manifest values and model configurations.
+
+The report follows the system light or dark theme, switches manually without reloading, and works on narrow screens: tables scroll horizontally and the layout collapses to a single column. Charts carry text equivalents (exact-value tables) and the explorer is operable from the keyboard.
+
+![Report overview](docs/screenshots/report-overview.png)
+
+![Trial explorer with detail panel](docs/screenshots/report-trial-explorer.png)
+
+![Latency histograms in dark theme](docs/screenshots/report-latency-dark.png)
+
+## Comparing runs
+
+```bash
+minieval-bench compare --run results/run-a --run results/run-b --output comparison.html
+```
+
+The command accepts two or more run directories and writes a self-contained HTML report. It first shows the experimental conditions of every run with differing cells highlighted (seed, repeats, concurrency, dataset fingerprint, version), then a comparability box listing every detected difference: changed datasets, changed model configuration behind a same display name, differing seeds or parameters. Per common model, each indicator is shown per run with an absolute delta (first → last) and a relative delta. Relative deltas are computed only when both values exist and the reference value is not zero; everything else reads `n/a`. No statement of statistical superiority is generated.
+
+Because equal display names do not prove equal models, configuration fields (provider, model string, temperature, max tokens, timeout) are compared and any drift is reported. When datasets differ, score differences are explicitly flagged as potentially caused by the dataset change.
+
+![Run comparison report](docs/screenshots/comparison.png)
+
+## CSV export
+
+```bash
+minieval-bench export --input results/ --format csv --output results/trials.csv
+```
+
+Exports one row per trial with the columns: `model, entry_id, repeat, ok, passed, latency_ms, queue_ms, input_tokens, output_tokens, cost_usd, error_type, error_message`. Conventions: UTF-8; missing values are empty fields and are never converted to zero; booleans are `true`/`false`; cells that could be interpreted as spreadsheet formulas (starting with `=`, `+`, `-`, `@` or a tab) are prefixed with a single quote. Responses are intentionally not included; use the JSON export or the HTML trial explorer for them.
+
+## Local history
+
+```bash
+minieval-bench history --root results/
+```
+
+Scans a directory and its subdirectories for runs (a `manifest.json`, or a `results.json` containing one) and lists them by execution date: benchmark name, date, model count, planned requests, MiniEval version and location. Incomplete or unreadable directories are skipped silently. There is no database and no indexing outside the given root.
 
 ## Limitations
 
@@ -254,7 +314,9 @@ Error messages are sanitized, but model responses and prompts are exported verba
 - The mock provider simulates latency, tokens and deterministic answers, not realistic model behavior.
 - Latency numbers depend on concurrency and network conditions; compare medians across runs with the same `concurrency`.
 - There is no checkpointing: an interrupted run cannot resume; rerun it instead.
-- `results.json` contains full responses and can grow large on big benchmarks.
+- `results.json` and `report.html` contain full responses; on very large benchmarks the HTML file grows accordingly (roughly 70 KB per 10,000 short trials plus the responses themselves).
+- The trial explorer paginates to keep the DOM small, but the whole dataset is embedded in the HTML file; there is no lazy loading from disk.
+- Comparison reports show deltas between the first and the last run; intermediate trends are visible in the per-run columns.
 
 ## Development
 
