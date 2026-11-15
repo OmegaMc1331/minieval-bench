@@ -1,7 +1,10 @@
 from __future__ import annotations
 
+import json
 from pathlib import Path
 
+from minieval_bench.evaluation.statistics import paired_comparison
+from minieval_bench.models import StatisticsConfig
 from minieval_bench.reports import load_results
 
 INDICATORS = [
@@ -25,10 +28,11 @@ CONFIG_FIELDS = ("provider", "model", "temperature", "max_tokens", "timeout", "d
 
 
 def load_run(run_dir: Path) -> dict:
-    manifest, stats, _ = load_results(run_dir)
+    manifest, stats, trials = load_results(run_dir)
     return {
         "manifest": manifest,
         "stats_by_model": {item.model: item for item in stats},
+        "trials": trials,
         "path": str(run_dir),
     }
 
@@ -57,10 +61,12 @@ def build_comparison_payload(run_dirs: list[Path]) -> dict:
                 "dataset_entries": run["manifest"].dataset_entries,
                 "path": run["path"],
                 "models": [model.model_dump(mode="json") for model in run["manifest"].models],
+                "judge": run["manifest"].judge,
             }
             for label, run in zip(labels, runs, strict=True)
         ],
         "warnings": comparability_warnings(runs, common_models),
+        "paired": paired_analyses(runs),
         "commonModels": [
             {
                 "model": name,
@@ -167,6 +173,45 @@ def comparability_warnings(runs: list[dict], common_models: list[str]) -> list[s
             f"Runs were produced by different MiniEval versions: {sorted(versions)}."
         )
 
+    latency_semantics = {
+        version_tuple(manifest.minieval_version) >= (0, 3, 1) for manifest in manifests
+    }
+    if len(latency_semantics) > 1:
+        warnings.append(
+            "Latency semantics differ: runs produced before 0.3.1 store a single latency "
+            "mixing generation and evaluation."
+        )
+
+    judge_blocks = [manifest.judge for manifest in manifests]
+    if any(block is not None for block in judge_blocks):
+        known_blocks = [block for block in judge_blocks if block]
+        if len(known_blocks) != len(judge_blocks):
+            warnings.append(
+                "Judge evaluation is enabled in some runs only, or its rubric is unknown for "
+                "runs produced before 0.3.1: judge scores are not directly comparable."
+            )
+        else:
+            fingerprints = {block.get("rubric_fingerprint") for block in known_blocks}
+            if len(fingerprints) > 1:
+                warnings.append(
+                    "Judge rubrics differ between runs (criteria, scales or weights): "
+                    "subjective scores are not directly comparable."
+                )
+            judge_models = {str(block.get("model")) for block in known_blocks}
+            if len(judge_models) > 1:
+                warnings.append(
+                    f"Judge models differ across runs: {sorted(judge_models)}."
+                )
+
+    code_configs = [
+        json.dumps(manifest.evaluators.get("code"), sort_keys=True)
+        if manifest.evaluators
+        else None
+        for manifest in manifests
+    ]
+    if len(set(code_configs)) > 1:
+        warnings.append("Code evaluation configuration differs between runs.")
+
     for model in common_models:
         differing = config_differences(model, runs)
         if differing:
@@ -180,6 +225,38 @@ def comparability_warnings(runs: list[dict], common_models: list[str]) -> list[s
         warnings.append("No model name is common to every run: only run conditions are compared.")
 
     return warnings
+
+
+def version_tuple(version: str) -> tuple[int, ...]:
+    parts = []
+    for piece in version.split(".")[:3]:
+        try:
+            parts.append(int(piece))
+        except ValueError:
+            parts.append(0)
+    return tuple(parts)
+
+
+def paired_analyses(runs: list[dict]) -> list[dict]:
+    if len(runs) != 2:
+        return []
+    first, second = runs
+    if first["manifest"].dataset_sha256 != second["manifest"].dataset_sha256:
+        return []
+    statistics_config = StatisticsConfig.model_validate(
+        first["manifest"].statistics or {}
+    )
+    analyses = []
+    for model in sorted(set(first["stats_by_model"]) & set(second["stats_by_model"])):
+        trials_a = [trial for trial in first["trials"] if trial.model == model]
+        trials_b = [trial for trial in second["trials"] if trial.model == model]
+        comparison = paired_comparison(
+            trials_a, trials_b, statistics_config, first["manifest"].seed
+        )
+        if comparison["units"] == 0:
+            continue
+        analyses.append({"model": model, **comparison})
+    return analyses
 
 
 def models_only_in(runs: list[dict], labels: list[str]) -> dict[str, list[str]]:

@@ -33,6 +33,7 @@ from minieval_bench.html_report import render_standalone, write_html_report
 from minieval_bench.models import BenchmarkConfig, DatasetEntry
 from minieval_bench.reports import (
     build_manifest,
+    cell,
     dataset_fingerprint,
     errors_table,
     evaluation_breakdown_table,
@@ -250,6 +251,9 @@ def compare(
     )
     for warning in payload["warnings"]:
         console.print(f"[yellow]{warning}[/yellow]")
+    paired_table = build_paired_table(payload.get("paired") or [])
+    if paired_table:
+        console.print(paired_table)
     console.print(f"wrote {output}")
 
 
@@ -676,6 +680,28 @@ def manifest_table(manifest) -> Table:
             f"{len(matching.get('conflicts', []))} conflict(s)",
         )
         table.add_row("Reevaluation dataset sha256", reevaluation.get("dataset_sha256", "n/a"))
+    return table
+
+
+def build_paired_table(paired: list[dict]) -> Table | None:
+    if not paired:
+        return None
+    table = Table(title="Paired differences per question (run 2 minus run 1)")
+    table.add_column("Model")
+    table.add_column("Questions", justify="right")
+    table.add_column("Mean diff", justify="right")
+    table.add_column("95% CI low", justify="right")
+    table.add_column("95% CI high", justify="right")
+    for entry in paired:
+        summary = entry["differences_summary"]
+        interval = entry["ci95"]
+        table.add_row(
+            entry["model"],
+            str(entry["units"]),
+            cell(summary["mean"], ".3f"),
+            cell(interval["low"], ".3f"),
+            cell(interval["high"], ".3f"),
+        )
     return table
 
 
