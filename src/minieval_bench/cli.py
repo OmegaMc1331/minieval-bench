@@ -27,7 +27,7 @@ from minieval_bench.evaluation.pairwise import (
     pairwise_summary,
     run_pairwise,
 )
-from minieval_bench.exports import write_trials_csv
+from minieval_bench.exports import write_evaluations_csv, write_trials_csv
 from minieval_bench.history import find_runs
 from minieval_bench.html_report import render_standalone, write_html_report
 from minieval_bench.models import BenchmarkConfig, DatasetEntry
@@ -284,6 +284,10 @@ def export(
     output_path = output or input_dir / "trials.csv"
     row_count = write_trials_csv(output_path, trials)
     console.print(f"wrote {output_path} ({row_count} trials)")
+    if any(trial.evaluation is not None for trial in trials):
+        evaluations_path = output_path.with_name("evaluations.csv")
+        evaluation_count = write_evaluations_csv(evaluations_path, trials)
+        console.print(f"wrote {evaluations_path} ({evaluation_count} evaluations)")
 
 
 @app.command()

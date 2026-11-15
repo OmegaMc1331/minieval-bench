@@ -78,3 +78,77 @@ def test_export_is_utf8_encoded(tmp_path):
 
     raw = output.read_bytes()
     assert "entrée-é中".encode() in raw
+
+
+from minieval_bench.exports import write_evaluations_csv
+from minieval_bench.models import EvaluationOutcome
+
+
+def evaluated_trial_entry(evaluator: str, **outcome_fields) -> "TrialResult":
+    trial = make_trial()
+    trial.evaluation = EvaluationOutcome(evaluator=evaluator, status="completed", **outcome_fields)
+    return trial
+
+
+def test_evaluations_csv_extracts_per_evaluator_fields(tmp_path):
+    judged = make_trial()
+    judged.evaluation = EvaluationOutcome(
+        evaluator="judge", status="failed", passed=None, error_message="judge returned invalid JSON",
+        input_tokens=100, output_tokens=50, cost_usd=0.01,
+        details={"judgments": 0},
+    )
+    coded = make_trial()
+    coded.evaluation = EvaluationOutcome(
+        evaluator="code_tests", status="completed", passed=True, score=1.0,
+        details={"passed": 2, "total": 2},
+    )
+    schemad = make_trial()
+    schemad.entry_id = "e3"
+    schemad.evaluation = EvaluationOutcome(
+        evaluator="json_schema", status="completed", passed=False, score=0.0,
+        details={"errors": [{"path": "$.a", "message": "required"}]},
+    )
+    output = tmp_path / "evaluations.csv"
+
+    count = write_evaluations_csv(output, [judged, coded, schemad, make_trial()])
+
+    assert count == 3
+    rows = read_rows(output)
+    assert rows[0][0:5] == ["model", "entry_id", "repeat", "evaluator", "status"]
+    judged_row = rows[1]
+    assert judged_row[EVALUATION_INDEX("evaluator")] == "judge"
+    assert judged_row[EVALUATION_INDEX("judgments")] == "0"
+    assert judged_row[EVALUATION_INDEX("evaluation_input_tokens")] == "100"
+    assert judged_row[EVALUATION_INDEX("evaluation_cost_usd")] == "0.01"
+    assert judged_row[EVALUATION_INDEX("code_tests_passed")] == ""
+    coded_row = rows[2]
+    assert coded_row[EVALUATION_INDEX("code_tests_passed")] == "2"
+    assert coded_row[EVALUATION_INDEX("code_tests_total")] == "2"
+    schema_row = rows[3]
+    assert schema_row[EVALUATION_INDEX("json_errors")] == "1"
+
+
+def EVALUATION_INDEX(column: str) -> int:
+    from minieval_bench.exports import EVALUATION_COLUMNS
+
+    return EVALUATION_COLUMNS.index(column)
+
+
+def test_export_cli_writes_evaluations_file(tmp_path):
+    from typer.testing import CliRunner
+
+    from conftest import EXAMPLE_CONFIG
+    from minieval_bench.cli import app
+
+    cli = CliRunner()
+    output_dir = tmp_path / "out"
+    cli.invoke(app, ["run", "--config", str(EXAMPLE_CONFIG), "--output", str(output_dir),
+                     "--no-html"], env={"COLUMNS": "200"})
+
+    result = cli.invoke(app, ["export", "--input", str(output_dir)], env={"COLUMNS": "200"})
+
+    assert result.exit_code == 0
+    evaluations = output_dir / "evaluations.csv"
+    assert evaluations.is_file()
+    content = evaluations.read_text(encoding="utf-8")
+    assert "deterministic" in content

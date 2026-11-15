@@ -52,13 +52,17 @@ def bootstrap_interval(
     return summary
 
 
-def question_pass_rates(trials: list[TrialResult]) -> list[float]:
+def _pass_rates_by_question(trials: list[TrialResult]) -> dict[str, float]:
     by_question: dict[str, list[int]] = {}
     for trial in trials:
         if not trial.ok or trial.passed is None:
             continue
         by_question.setdefault(trial.entry_id, []).append(1 if trial.passed else 0)
-    return [statistics.mean(values) for values in by_question.values()]
+    return {question: statistics.mean(values) for question, values in by_question.items()}
+
+
+def question_pass_rates(trials: list[TrialResult]) -> list[float]:
+    return list(_pass_rates_by_question(trials).values())
 
 
 def question_latencies(trials: list[TrialResult]) -> list[float]:
@@ -94,7 +98,9 @@ def analyze_model_statistics(
     analyses = []
     for model in sorted(grouped):
         model_trials = grouped[model]
-        pass_units = question_pass_rates(model_trials)
+        all_questions = {trial.entry_id for trial in model_trials}
+        pass_rates = _pass_rates_by_question(model_trials)
+        pass_units = list(pass_rates.values())
         latency_units = question_latencies(model_trials)
         judge_units = question_judge_scores(model_trials)
         analyses.append(
@@ -108,6 +114,10 @@ def analyze_model_statistics(
                         config.confidence_level,
                         seed,
                     ),
+                    "units": len(pass_units),
+                    "excluded_questions": sorted(all_questions - set(pass_rates)),
+                    "conditional_on": "evaluated trials only; failed requests and "
+                    "unavailable evaluations are excluded from the interval",
                 },
                 "latency_ms": {
                     "summary": numeric_summary(latency_units),
@@ -117,6 +127,7 @@ def analyze_model_statistics(
                         config.confidence_level,
                         seed + 1,
                     ),
+                    "units": len(latency_units),
                 },
                 "judge_score": {
                     "summary": numeric_summary(judge_units),
@@ -126,11 +137,14 @@ def analyze_model_statistics(
                         config.confidence_level,
                         seed + 2,
                     ),
+                    "units": len(judge_units),
                 },
                 "resampling": {
                     "unit": "question (repeats averaged first)",
                     "iterations": config.bootstrap_iterations,
                     "confidence_level": config.confidence_level,
+                    "note": "intervals describe sampling variability across questions; "
+                    "they do not establish statistical significance",
                 },
             }
         )
