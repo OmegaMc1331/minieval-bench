@@ -1,0 +1,32 @@
+name: Docker integration
+
+on:
+  workflow_dispatch:
+
+jobs:
+  docker-tests:
+    name: sandbox and adversarial tests
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v5
+      - uses: astral-sh/setup-uv@v6
+        with:
+          python-version: "3.12"
+          enable-cache: true
+      - run: uv sync --frozen
+      - run: uv run ruff check .
+      - run: uv run pytest
+      - name: Pull the pinned evaluation image
+        run: docker pull "python:3.12-slim@sha256:5e2bdb1b0d542d5039cffb8181c65930093949194a65c365dfb1b0fe13a4fa5b"
+      - name: Run sandbox, adversarial and output-limit tests
+        env:
+          MINIEVAL_DOCKER_TESTS: "1"
+        run: uv run pytest tests/test_code_docker.py -v
+      - name: Fail on leftover containers
+        run: |
+          leftover=$(docker ps -a --filter "name=minieval-eval-" --format "{{.Names}}")
+          if [ -n "$leftover" ]; then
+            echo "leftover containers: $leftover"
+            exit 1
+          fi

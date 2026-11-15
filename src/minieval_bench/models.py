@@ -57,7 +57,9 @@ class CodeEvalConfig(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     runtime: Literal["docker"] = "docker"
-    image: str = "python:3.12-slim"
+    image: str = (
+        "python:3.12-slim@sha256:5e2bdb1b0d542d5039cffb8181c65930093949194a65c365dfb1b0fe13a4fa5b"
+    )
     timeout_seconds: float = Field(default=30, gt=0)
     per_test_timeout_seconds: float = Field(default=10, gt=0)
     memory_mb: int = Field(default=256, ge=16)
