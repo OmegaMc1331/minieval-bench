@@ -130,3 +130,97 @@ def test_json_wrapped_in_prose_is_extracted():
 
     assert outcome.details["json_valid"] is True
     assert outcome.passed is True
+
+
+def test_json_null_response_validates_against_null_schema():
+    outcome = evaluate_json_schema("null", {"type": "null"})
+
+    assert outcome.passed is True
+    assert outcome.details["json_valid"] is True
+    assert outcome.details["errors"] == []
+
+
+def test_json_null_response_fails_object_schema_with_path():
+    outcome = evaluate_json_schema("null", {"type": "object"})
+
+    assert outcome.passed is False
+    assert outcome.details["json_valid"] is True
+    assert outcome.details["errors"][0]["path"] == "$"
+
+
+def test_nested_objects_arrays_and_special_characters():
+    schema = {
+        "type": "object",
+        "properties": {
+            "items": {
+                "type": "array",
+                "items": {
+                    "type": "object",
+                    "properties": {"name": {"type": "string"}},
+                    "required": ["name"],
+                },
+            },
+            "note": {"type": "string"},
+        },
+        "required": ["items"],
+    }
+    response = '{"items": [{"name": "a\\"b"}, {"name": "é中🙂"}], "note": "ok"}'
+
+    outcome = evaluate_json_schema(response, schema)
+
+    assert outcome.passed is True
+
+
+def test_numeric_types_and_missing_required_property():
+    schema = {
+        "type": "object",
+        "properties": {"count": {"type": "integer"}, "price": {"type": "number"}},
+        "required": ["count", "price"],
+    }
+
+    missing = evaluate_json_schema('{"count": 3}', schema)
+    wrong_type = evaluate_json_schema('{"count": "three", "price": 1.5}', schema)
+
+    assert missing.passed is False
+    assert missing.details["errors"][0]["path"] == "price"
+    assert wrong_type.passed is False
+
+
+def test_local_refs_are_resolved():
+    schema = {
+        "type": "object",
+        "properties": {"child": {"$ref": "#/$defs/node"}},
+        "$defs": {"node": {"type": "object", "properties": {"value": {"type": "integer"}}}},
+    }
+
+    valid = evaluate_json_schema('{"child": {"value": 1}}', schema)
+    invalid = evaluate_json_schema('{"child": {"value": "x"}}', schema)
+
+    assert valid.passed is True
+    assert invalid.passed is False
+
+
+def test_recursive_schema_validates():
+    schema = {
+        "type": "object",
+        "properties": {"next": {"$ref": "#"}},
+        "additionalProperties": False,
+    }
+
+    outcome = evaluate_json_schema('{"next": {"next": {}}}', schema)
+
+    assert outcome.passed is True
+
+
+def test_malformed_schema_is_rejected_at_validation_time():
+    import pytest
+
+    with pytest.raises(ValueError, match="invalid json schema"):
+        check_schema({"type": "not-a-real-type"})
+
+
+def test_fenced_null_json_is_extracted():
+    parsed, error = extract_json("```json\nnull\n```")
+
+    assert parsed is None
+    assert error is None

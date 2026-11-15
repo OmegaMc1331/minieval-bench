@@ -43,6 +43,14 @@ class Rubric(BaseModel):
     version: int = 1
     criteria: list[Criterion] = Field(min_length=1)
 
+    @model_validator(mode="after")
+    def check_unique_criteria(self) -> Rubric:
+        ids = [criterion.id for criterion in self.criteria]
+        duplicates = sorted({criterion_id for criterion_id in ids if ids.count(criterion_id) > 1})
+        if duplicates:
+            raise ValueError(f"rubric criteria must have unique ids: {', '.join(duplicates)}")
+        return self
+
     def fingerprint(self) -> str:
         canonical = self.model_dump(mode="json")
         encoded = json.dumps(canonical, sort_keys=True, separators=(",", ":")).encode()
@@ -113,7 +121,7 @@ def build_judge_prompt(rubric: Rubric, prompt: str, reference: str | None, respo
 
 def parse_verdict(text: str, rubric: Rubric) -> tuple[dict[str, float], str | None]:
     parsed, error = extract_json(text)
-    if parsed is None:
+    if error is not None:
         raise JudgeError(f"judge returned invalid JSON: {error}")
     if not isinstance(parsed, dict) or not isinstance(parsed.get("scores"), dict):
         raise JudgeError("judge verdict must be an object with a 'scores' object")

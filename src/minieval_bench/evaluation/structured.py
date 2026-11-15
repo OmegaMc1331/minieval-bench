@@ -93,7 +93,7 @@ def _first_json_block(text: str) -> str | None:
 
 def evaluate_json_schema(response: str, schema: dict) -> EvaluationOutcome:
     parsed, json_error = extract_json(response)
-    if parsed is None:
+    if json_error is not None:
         return EvaluationOutcome(
             evaluator="json_schema",
             status="completed",

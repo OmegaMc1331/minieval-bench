@@ -473,3 +473,15 @@ def test_budget_stopped_outcome_still_reports_usage():
     assert first.status == "completed"
     assert second.status == "unavailable"
     assert second.details["usage"]["calls"] == 0
+
+
+def test_rubric_rejects_duplicate_criterion_ids():
+    import pytest
+
+    with pytest.raises(ValueError, match="unique ids"):
+        Rubric(
+            criteria=[
+                {"id": "quality", "description": "first"},
+                {"id": "quality", "description": "second"},
+            ]
+        )
