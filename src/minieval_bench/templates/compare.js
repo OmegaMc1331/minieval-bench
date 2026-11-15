@@ -275,10 +275,109 @@ function renderExclusives(section) {
   );
 }
 
+function renderPaired(section) {
+  const paired = payload.paired || [];
+  if (paired.length === 0) {
+    section.append(
+      h("p", {
+        class: "empty-note",
+        text: "No paired statistics: they require exactly two runs over an identical dataset " +
+          "with at least one shared model and shared question ids.",
+      }),
+    );
+    return;
+  }
+  const last = runs[runs.length - 1].label;
+  const first = runs[0].label;
+  section.append(
+    h("p", {
+      class: "section-note",
+      text: `Per-question pass-rate differences (${last} minus ${first}), repeats averaged first. ` +
+        "Differences are only computed on questions present in both runs; the interval is a " +
+        "bootstrap over question means and is not a significance test.",
+    }),
+    h("div", { class: "table-scroll" },
+      h("table", null,
+        h("thead", null,
+          h("tr", null,
+            ["Model", "Questions", "Mean diff", "Median", "Std", "95% CI low", "95% CI high"].map(
+              (label, index) => h("th", { class: index > 0 ? "num" : null, text: label }),
+            ),
+          ),
+        ),
+        h("tbody", null,
+          paired.map((entry) => {
+            const summary = entry.differences_summary;
+            const interval = entry.ci95;
+            const fmt = (value) =>
+              value === null || value === undefined ? "n/a" : value.toFixed(3);
+            return h("tr", null,
+              h("td", { class: "mono", text: entry.model }),
+              h("td", { class: "num", text: fmtInt(entry.units) }),
+              h("td", { class: "num", text: fmt(summary.mean) }),
+              h("td", { class: "num", text: fmt(summary.median) }),
+              h("td", { class: "num", text: fmt(summary.std) }),
+              h("td", { class: "num", text: fmt(interval.low) }),
+              h("td", { class: "num", text: fmt(interval.high) }),
+            );
+          }),
+        ),
+      ),
+    ),
+  );
+}
+
+function renderJudges(section) {
+  const judges = runs.map((run) => ({
+    label: run.label,
+    judge: run.judge,
+  }));
+  if (judges.every((item) => !item.judge)) {
+    section.append(h("p", { class: "empty-note", text: "No judge evaluation in any run." }));
+    return;
+  }
+  section.append(
+    h("div", { class: "table-scroll" },
+      h("table", null,
+        h("thead", null,
+          h("tr", null,
+            ["Run", "Judge provider", "Judge model", "Judgments per response",
+              "Rubric fingerprint"].map((label, index) =>
+              h("th", { class: index > 0 ? "num" : null, text: label }),
+            ),
+          ),
+        ),
+        h("tbody", null,
+          judges.map(({ label, judge }) =>
+            h("tr", null,
+              h("td", { class: "mono", text: label }),
+              h("td", { text: judge ? judge.provider : "n/a" }),
+              h("td", { class: "mono", text: judge && judge.model ? judge.model : "n/a" }),
+              h("td", { class: "num", text: judge ? fmtInt(judge.repeats) : "n/a" }),
+              h("td", {
+                class: "mono",
+                title: judge ? judge.rubric_fingerprint : "",
+                text: judge ? shortSha(judge.rubric_fingerprint) : "n/a",
+              }),
+            ),
+          ),
+        ),
+      ),
+    ),
+    h("p", {
+      class: "section-note",
+      text: "Subjective scores are only comparable across runs when the judge model, rubric " +
+        "fingerprint and criteria match; mismatches are also listed under Comparability.",
+    }),
+  );
+}
+
 const SECTIONS = [
   ["runs", "Compared runs", renderRuns],
   ["warnings", "Comparability", renderWarnings],
   ["comparison", "Model comparison", renderComparison],
+  ["paired", "Paired differences", renderPaired],
+  ["judges", "Judge configuration", renderJudges],
   ["exclusive", "Model coverage", renderExclusives],
 ];
 
