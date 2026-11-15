@@ -165,6 +165,12 @@ def check_judge_budget(benchmark_config, entries) -> None:
             "[yellow]Judge pricing is unknown: "
             "the cost of evaluation cannot be guaranteed.[/yellow]"
         )
+    if judge and benchmark_config.evaluators.judge.budget_usd is not None:
+        console.print(
+            "budget_usd is a stop-on-observed guard: judging stops once the recorded spend "
+            "reaches it. Input-token cost cannot be pre-bounded, so a single in-flight call "
+            "may overshoot it."
+        )
 
 
 @app.command()
