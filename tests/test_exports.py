@@ -2,7 +2,14 @@ from __future__ import annotations
 
 import csv
 
-from minieval_bench.exports import CSV_COLUMNS, csv_value, neutralize_formula, write_trials_csv
+from minieval_bench.exports import (
+    CSV_COLUMNS,
+    csv_value,
+    neutralize_formula,
+    write_evaluations_csv,
+    write_trials_csv,
+)
+from minieval_bench.models import EvaluationOutcome
 from test_stats import make_trial
 
 
@@ -80,21 +87,18 @@ def test_export_is_utf8_encoded(tmp_path):
     assert "entrée-é中".encode() in raw
 
 
-from minieval_bench.exports import write_evaluations_csv
-from minieval_bench.models import EvaluationOutcome
-
-
-def evaluated_trial_entry(evaluator: str, **outcome_fields) -> "TrialResult":
-    trial = make_trial()
-    trial.evaluation = EvaluationOutcome(evaluator=evaluator, status="completed", **outcome_fields)
-    return trial
 
 
 def test_evaluations_csv_extracts_per_evaluator_fields(tmp_path):
     judged = make_trial()
     judged.evaluation = EvaluationOutcome(
-        evaluator="judge", status="failed", passed=None, error_message="judge returned invalid JSON",
-        input_tokens=100, output_tokens=50, cost_usd=0.01,
+        evaluator="judge",
+        status="failed",
+        passed=None,
+        error_message="judge returned invalid JSON",
+        input_tokens=100,
+        output_tokens=50,
+        cost_usd=0.01,
         details={"judgments": 0},
     )
     coded = make_trial()
