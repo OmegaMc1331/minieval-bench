@@ -692,6 +692,7 @@ def build_paired_table(paired: list[dict]) -> Table | None:
         return None
     table = Table(title="Paired differences per question (run 2 minus run 1)")
     table.add_column("Model")
+    table.add_column("Metric")
     table.add_column("Questions", justify="right")
     table.add_column("Mean diff", justify="right")
     table.add_column("95% CI low", justify="right")
@@ -701,6 +702,7 @@ def build_paired_table(paired: list[dict]) -> Table | None:
         interval = entry["ci95"]
         table.add_row(
             entry["model"],
+            entry.get("metric", "pass rate"),
             str(entry["units"]),
             cell(summary["mean"], ".3f"),
             cell(interval["low"], ".3f"),

@@ -151,21 +151,48 @@ def analyze_model_statistics(
     return analyses
 
 
+def paired_question_values(
+    trials_a: list[TrialResult],
+    trials_b: list[TrialResult],
+    selector,
+) -> list[float]:
+    def values_by_question(trials: list[TrialResult]) -> dict[str, float]:
+        grouped: dict[str, list[float]] = {}
+        for trial in trials:
+            if not trial.ok:
+                continue
+            value = selector(trial)
+            if value is None:
+                continue
+            grouped.setdefault(trial.entry_id, []).append(value)
+        return {question: statistics.mean(values) for question, values in grouped.items()}
+
+    values_a = values_by_question(trials_a)
+    values_b = values_by_question(trials_b)
+    common = sorted(set(values_a) & set(values_b))
+    return [values_b[question] - values_a[question] for question in common]
+
+
+def binary_pass_value(trial: TrialResult) -> float | None:
+    if trial.evaluation is None:
+        return None if trial.passed is None else (1.0 if trial.passed else 0.0)
+    if trial.evaluation.status != "completed" or trial.evaluation.passed is None:
+        return None
+    return 1.0 if trial.evaluation.passed else 0.0
+
+
+def judge_score_value(trial: TrialResult) -> float | None:
+    if trial.evaluation is None or trial.evaluation.evaluator != "judge":
+        return None
+    if trial.evaluation.status != "completed" or trial.evaluation.score is None:
+        return None
+    return trial.evaluation.score
+
+
 def paired_question_pass_rates(
     trials_a: list[TrialResult], trials_b: list[TrialResult]
 ) -> list[float]:
-    def rates_by_question(trials: list[TrialResult]) -> dict[str, float]:
-        grouped: dict[str, list[int]] = {}
-        for trial in trials:
-            if not trial.ok or trial.passed is None:
-                continue
-            grouped.setdefault(trial.entry_id, []).append(1 if trial.passed else 0)
-        return {question: statistics.mean(values) for question, values in grouped.items()}
-
-    rates_a = rates_by_question(trials_a)
-    rates_b = rates_by_question(trials_b)
-    common = sorted(set(rates_a) & set(rates_b))
-    return [rates_b[question] - rates_a[question] for question in common]
+    return paired_question_values(trials_a, trials_b, binary_pass_value)
 
 
 def paired_comparison(
@@ -173,9 +200,12 @@ def paired_comparison(
     trials_b: list[TrialResult],
     config: StatisticsConfig,
     seed: int,
+    metric: str = "pass rate (conditional on evaluation)",
+    selector=binary_pass_value,
 ) -> dict:
-    differences = paired_question_pass_rates(trials_a, trials_b)
+    differences = paired_question_values(trials_a, trials_b, selector)
     return {
+        "metric": metric,
         "differences_summary": numeric_summary(differences),
         "ci95": bootstrap_interval(
             differences, config.bootstrap_iterations, config.confidence_level, seed

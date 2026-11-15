@@ -3,7 +3,11 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
-from minieval_bench.evaluation.statistics import paired_comparison
+from minieval_bench.evaluation.statistics import (
+    binary_pass_value,
+    judge_score_value,
+    paired_comparison,
+)
 from minieval_bench.models import StatisticsConfig
 from minieval_bench.reports import load_results
 
@@ -25,6 +29,11 @@ INDICATORS = [
 ]
 
 CONFIG_FIELDS = ("provider", "model", "temperature", "max_tokens", "timeout", "drop_params")
+
+PAIRED_METRICS = [
+    ("pass rate (conditional on evaluation)", binary_pass_value),
+    ("judge score", judge_score_value),
+]
 
 
 def load_run(run_dir: Path) -> dict:
@@ -250,12 +259,13 @@ def paired_analyses(runs: list[dict]) -> list[dict]:
     for model in sorted(set(first["stats_by_model"]) & set(second["stats_by_model"])):
         trials_a = [trial for trial in first["trials"] if trial.model == model]
         trials_b = [trial for trial in second["trials"] if trial.model == model]
-        comparison = paired_comparison(
-            trials_a, trials_b, statistics_config, first["manifest"].seed
-        )
-        if comparison["units"] == 0:
-            continue
-        analyses.append({"model": model, **comparison})
+        for metric, selector in PAIRED_METRICS:
+            comparison = paired_comparison(
+                trials_a, trials_b, statistics_config, first["manifest"].seed, metric, selector
+            )
+            if comparison["units"] == 0:
+                continue
+            analyses.append({"model": model, **comparison})
     return analyses
 
 

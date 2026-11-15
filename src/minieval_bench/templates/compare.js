@@ -292,7 +292,7 @@ function renderPaired(section) {
   section.append(
     h("p", {
       class: "section-note",
-      text: `Per-question pass-rate differences (${last} minus ${first}), repeats averaged first. ` +
+      text: `Per-question differences (${last} minus ${first}), repeats averaged first. ` +
         "Differences are only computed on questions present in both runs; the interval is a " +
         "bootstrap over question means and is not a significance test.",
     }),
@@ -300,8 +300,9 @@ function renderPaired(section) {
       h("table", null,
         h("thead", null,
           h("tr", null,
-            ["Model", "Questions", "Mean diff", "Median", "Std", "95% CI low", "95% CI high"].map(
-              (label, index) => h("th", { class: index > 0 ? "num" : null, text: label }),
+            ["Model", "Metric", "Questions", "Mean diff", "Median", "Std", "95% CI low",
+              "95% CI high"].map(
+              (label, index) => h("th", { class: index > 1 ? "num" : null, text: label }),
             ),
           ),
         ),
@@ -313,6 +314,7 @@ function renderPaired(section) {
               value === null || value === undefined ? "n/a" : value.toFixed(3);
             return h("tr", null,
               h("td", { class: "mono", text: entry.model }),
+              h("td", { text: entry.metric || "pass rate" }),
               h("td", { class: "num", text: fmtInt(entry.units) }),
               h("td", { class: "num", text: fmt(summary.mean) }),
               h("td", { class: "num", text: fmt(summary.median) }),
