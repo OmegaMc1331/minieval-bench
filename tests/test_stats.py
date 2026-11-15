@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import pytest
 
-from minieval_bench.models import TrialResult
+from minieval_bench.models import EvaluationOutcome, TrialResult
 from minieval_bench.runner import available_total, compute_stats, percentile
 
 
@@ -181,3 +181,87 @@ def test_available_total_returns_sum_and_coverage():
     assert available_total([1, 2, None, 3]) == (6, 3)
     assert available_total([None, None]) == (None, 0)
     assert available_total([0, 0]) == (0, 2)
+
+
+def evaluated_trial(
+    evaluator: str,
+    entry_id: str,
+    passed: bool | None,
+    score: float | None = None,
+    details: dict | None = None,
+    status: str = "completed",
+) -> TrialResult:
+    return TrialResult(
+        model="mixed",
+        entry_id=entry_id,
+        repeat=0,
+        ok=True,
+        response="resp",
+        latency_ms=10.0,
+        input_tokens=5,
+        output_tokens=5,
+        cost_usd=None,
+        error_type=None,
+        error_message=None,
+        passed=passed,
+        evaluation=EvaluationOutcome(
+            evaluator=evaluator, status=status, passed=passed, score=score, details=details
+        ),
+    )
+
+
+def test_mixed_dataset_separates_evaluator_populations():
+    trials = [
+        evaluated_trial("deterministic", "d1", True),
+        evaluated_trial("deterministic", "d2", False),
+        evaluated_trial("json_schema", "j1", False),
+        evaluated_trial("code_tests", "c1", True, details={"passed": 1, "total": 2}),
+        evaluated_trial("judge", "q1", None, score=0.75),
+    ]
+
+    stats = compute_stats(trials)[0]
+
+    assert stats.answer_accuracy == pytest.approx(0.5)
+    assert stats.deterministic_trials == 2
+    assert stats.json_schema_conformance == pytest.approx(0.0)
+    assert stats.json_schema_trials == 1
+    assert stats.code_eval_pass_rate == pytest.approx(1.0)
+    assert stats.code_tests_passed == 1
+    assert stats.code_tests_total == 2
+    assert stats.judge_score_mean == pytest.approx(0.75)
+    assert stats.judge_evaluations == 1
+    assert stats.judge_trials == 1
+    assert stats.evaluable == 4
+    assert stats.passed == 2
+
+
+def test_pure_json_schema_run_has_no_answer_accuracy():
+    stats = compute_stats([evaluated_trial("json_schema", "j1", True)]) [0]
+
+    assert stats.answer_accuracy is None
+    assert stats.deterministic_trials == 0
+    assert stats.json_schema_conformance == pytest.approx(1.0)
+
+
+def test_legacy_trials_count_as_deterministic():
+    trials = [make_trial(passed=True), make_trial(passed=False)]
+
+    stats = compute_stats(trials)[0]
+
+    assert stats.deterministic_trials == 2
+    assert stats.answer_accuracy == pytest.approx(0.5)
+    assert stats.json_schema_conformance is None
+    assert stats.judge_score_mean is None
+
+
+def test_judge_unavailable_is_not_a_judged_score():
+    trials = [
+        evaluated_trial("judge", "q1", None, status="unavailable"),
+        evaluated_trial("judge", "q2", None, score=0.5),
+    ]
+
+    stats = compute_stats(trials)[0]
+
+    assert stats.judge_score_mean == pytest.approx(0.5)
+    assert stats.judge_evaluations == 1
+    assert stats.judge_trials == 2

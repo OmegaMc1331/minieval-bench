@@ -1,6 +1,6 @@
 [project]
 name = "minieval-bench"
-version = "0.3.0"
+version = "0.3.1"
 description = "Lightweight framework for benchmarking and comparing language models."
 readme = "README.md"
 license = "MIT"
@@ -36,6 +36,7 @@ Changelog = "https://github.com/OmegaMc1331/minieval-bench/releases"
 [dependency-groups]
 dev = [
     "pytest>=8.0",
+    "pytest-cov>=6.0",
     "ruff>=0.8",
 ]
 

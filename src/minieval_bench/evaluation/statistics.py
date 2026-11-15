@@ -52,21 +52,28 @@ def bootstrap_interval(
     return summary
 
 
-def question_pass_rates(trials: list[TrialResult]) -> list[float]:
+def _pass_rates_by_question(trials: list[TrialResult]) -> dict[str, float]:
     by_question: dict[str, list[int]] = {}
     for trial in trials:
         if not trial.ok or trial.passed is None:
             continue
         by_question.setdefault(trial.entry_id, []).append(1 if trial.passed else 0)
-    return [statistics.mean(values) for values in by_question.values()]
+    return {question: statistics.mean(values) for question, values in by_question.items()}
+
+
+def question_pass_rates(trials: list[TrialResult]) -> list[float]:
+    return list(_pass_rates_by_question(trials).values())
 
 
 def question_latencies(trials: list[TrialResult]) -> list[float]:
     by_question: dict[str, list[float]] = {}
     for trial in trials:
-        if not trial.ok or trial.latency_ms is None:
+        if not trial.ok:
             continue
-        by_question.setdefault(trial.entry_id, []).append(trial.latency_ms)
+        latency = trial.generation_ms
+        if latency is None:
+            latency = trial.latency_ms
+        by_question.setdefault(trial.entry_id, []).append(latency)
     return [statistics.mean(values) for values in by_question.values()]
 
 
@@ -91,7 +98,9 @@ def analyze_model_statistics(
     analyses = []
     for model in sorted(grouped):
         model_trials = grouped[model]
-        pass_units = question_pass_rates(model_trials)
+        all_questions = {trial.entry_id for trial in model_trials}
+        pass_rates = _pass_rates_by_question(model_trials)
+        pass_units = list(pass_rates.values())
         latency_units = question_latencies(model_trials)
         judge_units = question_judge_scores(model_trials)
         analyses.append(
@@ -105,6 +114,10 @@ def analyze_model_statistics(
                         config.confidence_level,
                         seed,
                     ),
+                    "units": len(pass_units),
+                    "excluded_questions": sorted(all_questions - set(pass_rates)),
+                    "conditional_on": "evaluated trials only; failed requests and "
+                    "unavailable evaluations are excluded from the interval",
                 },
                 "latency_ms": {
                     "summary": numeric_summary(latency_units),
@@ -114,6 +127,7 @@ def analyze_model_statistics(
                         config.confidence_level,
                         seed + 1,
                     ),
+                    "units": len(latency_units),
                 },
                 "judge_score": {
                     "summary": numeric_summary(judge_units),
@@ -123,32 +137,62 @@ def analyze_model_statistics(
                         config.confidence_level,
                         seed + 2,
                     ),
+                    "units": len(judge_units),
                 },
                 "resampling": {
                     "unit": "question (repeats averaged first)",
                     "iterations": config.bootstrap_iterations,
                     "confidence_level": config.confidence_level,
+                    "note": "intervals describe sampling variability across questions; "
+                    "they do not establish statistical significance",
                 },
             }
         )
     return analyses
 
 
+def paired_question_values(
+    trials_a: list[TrialResult],
+    trials_b: list[TrialResult],
+    selector,
+) -> list[float]:
+    def values_by_question(trials: list[TrialResult]) -> dict[str, float]:
+        grouped: dict[str, list[float]] = {}
+        for trial in trials:
+            if not trial.ok:
+                continue
+            value = selector(trial)
+            if value is None:
+                continue
+            grouped.setdefault(trial.entry_id, []).append(value)
+        return {question: statistics.mean(values) for question, values in grouped.items()}
+
+    values_a = values_by_question(trials_a)
+    values_b = values_by_question(trials_b)
+    common = sorted(set(values_a) & set(values_b))
+    return [values_b[question] - values_a[question] for question in common]
+
+
+def binary_pass_value(trial: TrialResult) -> float | None:
+    if trial.evaluation is None:
+        return None if trial.passed is None else (1.0 if trial.passed else 0.0)
+    if trial.evaluation.status != "completed" or trial.evaluation.passed is None:
+        return None
+    return 1.0 if trial.evaluation.passed else 0.0
+
+
+def judge_score_value(trial: TrialResult) -> float | None:
+    if trial.evaluation is None or trial.evaluation.evaluator != "judge":
+        return None
+    if trial.evaluation.status != "completed" or trial.evaluation.score is None:
+        return None
+    return trial.evaluation.score
+
+
 def paired_question_pass_rates(
     trials_a: list[TrialResult], trials_b: list[TrialResult]
 ) -> list[float]:
-    def rates_by_question(trials: list[TrialResult]) -> dict[str, float]:
-        grouped: dict[str, list[int]] = {}
-        for trial in trials:
-            if not trial.ok or trial.passed is None:
-                continue
-            grouped.setdefault(trial.entry_id, []).append(1 if trial.passed else 0)
-        return {question: statistics.mean(values) for question, values in grouped.items()}
-
-    rates_a = rates_by_question(trials_a)
-    rates_b = rates_by_question(trials_b)
-    common = sorted(set(rates_a) & set(rates_b))
-    return [rates_b[question] - rates_a[question] for question in common]
+    return paired_question_values(trials_a, trials_b, binary_pass_value)
 
 
 def paired_comparison(
@@ -156,9 +200,12 @@ def paired_comparison(
     trials_b: list[TrialResult],
     config: StatisticsConfig,
     seed: int,
+    metric: str = "pass rate (conditional on evaluation)",
+    selector=binary_pass_value,
 ) -> dict:
-    differences = paired_question_pass_rates(trials_a, trials_b)
+    differences = paired_question_values(trials_a, trials_b, selector)
     return {
+        "metric": metric,
         "differences_summary": numeric_summary(differences),
         "ci95": bootstrap_interval(
             differences, config.bootstrap_iterations, config.confidence_level, seed
@@ -235,6 +282,45 @@ def _passed_value(trial: TrialResult) -> bool | None:
     if trial.evaluation is None:
         return trial.passed
     return trial.evaluation.passed
+
+
+def per_model_evaluator_summaries(trials: list[TrialResult]) -> list[dict]:
+    grouped: dict[tuple[str, str], list[TrialResult]] = {}
+    for trial in trials:
+        if not trial.ok:
+            continue
+        evaluator = trial.evaluation.evaluator if trial.evaluation else "deterministic"
+        grouped.setdefault((trial.model, evaluator), []).append(trial)
+
+    summaries = []
+    for (model, evaluator) in sorted(grouped):
+        evaluator_trials = grouped[(model, evaluator)]
+        completed = [
+            trial
+            for trial in evaluator_trials
+            if trial.evaluation is None or trial.evaluation.status == "completed"
+        ]
+        binary = [trial for trial in completed if _passed_value(trial) is not None]
+        passed = sum(1 for trial in binary if _passed_value(trial) is True)
+        scores = [
+            trial.evaluation.score
+            for trial in completed
+            if trial.evaluation is not None and trial.evaluation.score is not None
+        ]
+        summaries.append(
+            {
+                "model": model,
+                "evaluator": evaluator,
+                "trials": len(evaluator_trials),
+                "completed": len(completed),
+                "passed": passed,
+                "binary": len(binary),
+                "binary_pass_rate": passed / len(binary) if binary else None,
+                "mean_score": statistics.mean(scores) if scores else None,
+                "score_count": len(scores),
+            }
+        )
+    return summaries
 
 
 def _sum_reported(trials: list[TrialResult], pick) -> float | int | None:

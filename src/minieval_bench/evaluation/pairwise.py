@@ -7,7 +7,7 @@ from pydantic import BaseModel
 from minieval_bench.evaluation.judge import JudgeError, derive_seed
 from minieval_bench.evaluation.structured import extract_json
 from minieval_bench.models import JudgeConfig, ModelConfig, TrialResult
-from minieval_bench.providers import build_provider
+from minieval_bench.providers import build_provider, cost_from_pricing, safe_error_message
 
 
 class PairwiseError(Exception):
@@ -18,6 +18,9 @@ class PairwiseJudgment(BaseModel):
     order: str
     preferred: str
     reason: str | None = None
+    input_tokens: int | None = None
+    output_tokens: int | None = None
+    cost_usd: float | None = None
 
 
 class PairwiseRecord(BaseModel):
@@ -50,7 +53,7 @@ def build_pairwise_prompt(prompt: str, response_a: str, response_b: str) -> str:
 
 def parse_pairwise_verdict(text: str) -> tuple[str, str | None]:
     parsed, error = extract_json(text)
-    if parsed is None:
+    if parsed is None and error is not None:
         raise PairwiseError(f"judge returned invalid JSON: {error}")
     if not isinstance(parsed, dict):
         raise PairwiseError("judge verdict must be a JSON object")
@@ -70,6 +73,8 @@ class PairwiseJudge:
         if not config.model:
             raise PairwiseError("pairwise judge provider 'litellm' requires a model string")
         self.seed = seed
+        self.max_calls = config.max_calls
+        self.calls_made = 0
         self.provider = build_provider(
             ModelConfig(
                 name="pairwise-judge",
@@ -86,33 +91,69 @@ class PairwiseJudge:
     def judge(
         self, prompt: str, response_a: str, response_b: str, order_seed: int
     ) -> PairwiseJudgment:
+        if self.max_calls is not None and self.calls_made >= self.max_calls:
+            raise PairwiseError(
+                f"pairwise judge call budget exhausted (max_calls={self.max_calls})"
+            )
+        self.calls_made += 1
         judge_prompt = build_pairwise_prompt(prompt, response_a, response_b)
-        result = self.provider.complete(judge_prompt, None, order_seed)
+        try:
+            result = self.provider.complete(judge_prompt, None, order_seed)
+        except Exception as exc:
+            raise PairwiseError(
+                f"pairwise judge call failed: {safe_error_message(exc)}"
+            ) from exc
         preferred, reason = parse_pairwise_verdict(result.text)
-        return PairwiseJudgment(order="AB", preferred=preferred, reason=reason)
+        return PairwiseJudgment(
+            order="AB",
+            preferred=preferred,
+            reason=reason,
+            input_tokens=result.input_tokens,
+            output_tokens=result.output_tokens,
+            cost_usd=result.cost_usd,
+        )
 
 
 class MockPairwiseJudge:
-    def __init__(self, seed: int) -> None:
+    def __init__(self, config: JudgeConfig, seed: int) -> None:
         self.seed = seed
+        self.max_calls = config.max_calls
+        self.calls_made = 0
+        self.pricing = ModelConfig(
+            name="pairwise-judge",
+            input_cost_per_1m=config.input_cost_per_1m,
+            output_cost_per_1m=config.output_cost_per_1m,
+        )
 
     def judge(
         self, prompt: str, response_a: str, response_b: str, order_seed: int
     ) -> PairwiseJudgment:
+        if self.max_calls is not None and self.calls_made >= self.max_calls:
+            raise PairwiseError(
+                f"pairwise judge call budget exhausted (max_calls={self.max_calls})"
+            )
+        self.calls_made += 1
         digest_a = int(hashlib.sha256(f"{order_seed}:{response_a}".encode()).hexdigest()[:8], 16)
         digest_b = int(hashlib.sha256(f"{order_seed}:{response_b}".encode()).hexdigest()[:8], 16)
         if digest_a == digest_b:
             preferred = "tie"
         else:
             preferred = "A" if digest_a > digest_b else "B"
+        input_tokens = len(prompt.split())
+        output_tokens = 16
         return PairwiseJudgment(
-            order="AB", preferred=preferred, reason="deterministic mock judgment"
+            order="AB",
+            preferred=preferred,
+            reason="deterministic mock judgment",
+            input_tokens=input_tokens,
+            output_tokens=output_tokens,
+            cost_usd=cost_from_pricing(self.pricing, input_tokens, output_tokens),
         )
 
 
 def build_pairwise_judge(config: JudgeConfig, seed: int) -> PairwiseJudge | MockPairwiseJudge:
     if config.provider == "mock":
-        return MockPairwiseJudge(seed)
+        return MockPairwiseJudge(config, seed)
     return PairwiseJudge(config, seed)
 
 
@@ -216,29 +257,50 @@ def _mapped(
         preferred = second_model
     else:
         preferred = "tie"
-    return PairwiseJudgment(order=order, preferred=preferred, reason=judgment.reason)
+    return PairwiseJudgment(
+        order=order,
+        preferred=preferred,
+        reason=judgment.reason,
+        input_tokens=judgment.input_tokens,
+        output_tokens=judgment.output_tokens,
+        cost_usd=judgment.cost_usd,
+    )
 
 
 def pairwise_outcome(judgments: list[PairwiseJudgment], model_a: str, model_b: str) -> str:
-    preferences = [
-        judgment.preferred for judgment in judgments if judgment.preferred != "tie"
-    ]
-    if not preferences:
+    if len(judgments) < 2:
+        return "incomplete"
+    first, second = (judgment.preferred for judgment in judgments[:2])
+    if first != second:
+        if first == "tie" or second == "tie":
+            return "mixed_verdict"
+        return "disagreement"
+    if first == "tie":
         return "tie"
-    if all(preference == model_a for preference in preferences):
-        return f"win:{model_a}"
-    if all(preference == model_b for preference in preferences):
-        return f"win:{model_b}"
-    return "disagreement"
+    return f"win:{first}"
 
 
 def pairwise_summary(records: list[PairwiseRecord], model_a: str, model_b: str) -> dict:
     outcomes = [record.outcome for record in records]
+    judgments = [
+        judgment for record in records for judgment in record.judgments
+    ]
+    known_input = [j.input_tokens for j in judgments if j.input_tokens is not None]
+    known_output = [j.output_tokens for j in judgments if j.output_tokens is not None]
+    known_cost = [j.cost_usd for j in judgments if j.cost_usd is not None]
     return {
         "comparisons": len(records),
         f"wins:{model_a}": outcomes.count(f"win:{model_a}"),
         f"wins:{model_b}": outcomes.count(f"win:{model_b}"),
         "ties": outcomes.count("tie"),
+        "mixed_verdicts": outcomes.count("mixed_verdict"),
         "disagreements": outcomes.count("disagreement"),
-        "unavailable": outcomes.count("unavailable") + outcomes.count("judge_error"),
+        "judge_errors": outcomes.count("judge_error"),
+        "incomplete": outcomes.count("incomplete"),
+        "unavailable": outcomes.count("unavailable"),
+        "judge_calls": len(judgments),
+        "input_tokens": sum(known_input) if known_input else None,
+        "output_tokens": sum(known_output) if known_output else None,
+        "cost_usd": sum(known_cost) if known_cost else None,
+        "usage_known_judgments": len(known_input),
     }

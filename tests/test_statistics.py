@@ -195,3 +195,62 @@ def test_summarize_evaluations_counts_evaluator_failures_and_costs():
     assert summaries["judge"]["evaluator_failed"] == 1
     assert summaries["judge"]["cost_usd"] == pytest.approx(0.001)
     assert summaries["code_tests"]["evaluator_unavailable"] == 1
+
+
+def test_bootstrap_single_question_has_no_interval():
+    interval = bootstrap_interval([1.0], 100, 0.95, seed=1)
+
+    assert interval["low"] is None and interval["high"] is None
+
+
+def test_bootstrap_two_questions_and_identical_values():
+    identical = bootstrap_interval([0.5, 0.5, 0.5], 200, 0.95, seed=2)
+
+    assert identical["low"] == pytest.approx(0.5)
+    assert identical["high"] == pytest.approx(0.5)
+
+    spread = bootstrap_interval([0.0, 1.0], 200, 0.95, seed=2)
+
+    assert spread["low"] == pytest.approx(0.0)
+    assert spread["high"] == pytest.approx(1.0)
+
+
+def make_statistics_trial(entry_id: str, passed: bool, ok: bool = True):
+    trial = make_trial(passed=passed if ok else None, ok=ok)
+    trial.entry_id = entry_id
+    if not ok:
+        trial.error_type = "Boom"
+        trial.error_message = "boom"
+    return trial
+
+
+def test_analyze_reports_excluded_questions_and_conditional_interval():
+    trials = [
+        make_statistics_trial("q1", ok=False, passed=None),
+        make_statistics_trial("q2", True),
+        make_statistics_trial("q3", False),
+        make_statistics_trial("q2", True),
+        make_statistics_trial("q3", True),
+    ]
+
+    analyses = analyze_model_statistics(
+        trials, StatisticsConfig(bootstrap_iterations=100, confidence_level=0.95), seed=1
+    )
+
+    entry = analyses[0]
+    assert entry["pass_rate"]["units"] == 2
+    assert entry["pass_rate"]["excluded_questions"] == ["q1"]
+    assert "evaluated trials only" in entry["pass_rate"]["conditional_on"]
+    assert "significance" in entry["resampling"]["note"]
+    assert entry["latency_ms"]["units"] == 2
+
+
+def test_paired_comparison_with_disjoint_questions_has_no_units():
+    trials_a = [make_statistics_trial("q1", True), make_statistics_trial("q2", False)]
+    trials_b = [make_statistics_trial("q3", True), make_statistics_trial("q4", True)]
+
+    comparison = paired_comparison(trials_a, trials_b, STATS_CONFIG, seed=1)
+
+    assert comparison["units"] == 0
+    assert comparison["differences_summary"]["count"] == 0
+    assert comparison["ci95"]["low"] is None

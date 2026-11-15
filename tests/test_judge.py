@@ -8,7 +8,9 @@ import yaml
 
 from minieval_bench.evaluation.judge import (
     DEFAULT_RUBRIC,
+    JudgeCallResult,
     JudgeError,
+    JudgeUsage,
     MockJudge,
     Rubric,
     build_judge,
@@ -207,24 +209,61 @@ def test_monetary_budget_requires_pricing():
         build_judge(mock_judge_config(budget_usd=1.0), DEFAULT_RUBRIC, seed=1)
 
 
-def test_budget_usd_stops_judging(monkeypatch):
-    original = MockJudge._judge_once
-
-    def costly_once(self, prompt, reference, response, repeat_index):
-        scores, reason, usage = original(self, prompt, reference, response, repeat_index)
-        self.cost_usd += 10.0
-        return scores, reason, usage
-
-    monkeypatch.setattr(MockJudge, "_judge_once", costly_once)
+def test_budget_usd_stops_judging():
     config = mock_judge_config(
         repeats=3, budget_usd=5.0, input_cost_per_1m=1.0, output_cost_per_1m=1.0
     )
     judge = MockJudge(config, DEFAULT_RUBRIC, seed=1)
+    judge._judge_once = lambda prompt, reference, response, repeat_index: JudgeCallResult(
+        scores={"correctness": 3.0, "relevance": 3.0, "instruction_following": 3.0, "clarity": 3.0},
+        reason="costly",
+        usage=JudgeUsage(input_tokens=1000, output_tokens=1000, cost_usd=6.0),
+    )
     outcome = judge.evaluate("prompt", None, "response")
 
     assert outcome.status == "completed"
     assert outcome.details["judgments"] == 1
     assert outcome.details["budget_exhausted"] is True
+    assert judge.calls_made == 1
+
+
+def test_reserve_call_respects_max_calls_under_concurrency():
+    judge = MockJudge(mock_judge_config(max_calls=10), DEFAULT_RUBRIC, seed=1)
+
+    granted = run_concurrently(lambda: judge.reserve_call(), threads=40)
+
+    assert sum(granted) == 10
+    assert judge.calls_made == 10
+
+
+def test_concurrent_evaluate_never_exceeds_max_calls():
+    config = mock_judge_config(max_calls=8)
+    judge = MockJudge(config, DEFAULT_RUBRIC, seed=1)
+
+    outcomes = run_concurrent_evaluates(judge, count=40)
+
+    assert judge.calls_made <= 8
+    unavailable = sum(1 for outcome in outcomes if outcome.status == "unavailable")
+    completed = sum(1 for outcome in outcomes if outcome.status == "completed")
+    assert completed + unavailable == 40
+    assert completed >= 1
+
+
+def run_concurrently(function, threads):
+    from concurrent.futures import ThreadPoolExecutor
+
+    with ThreadPoolExecutor(max_workers=threads) as executor:
+        return list(executor.map(lambda _: function(), range(threads)))
+
+
+def run_concurrent_evaluates(judge, count):
+    from concurrent.futures import ThreadPoolExecutor
+
+    def evaluate(index):
+        return judge.evaluate(f"prompt-{index}", None, "response")
+
+    with ThreadPoolExecutor(max_workers=16) as executor:
+        return list(executor.map(evaluate, range(count)))
 
 
 def test_litellm_judge_parses_provider_response(monkeypatch):
@@ -326,3 +365,123 @@ def test_load_calibration_rejects_broken_files(tmp_path):
 
     with pytest.raises(JudgeError, match="calibration"):
         load_calibration(path)
+
+
+def test_invalid_verdicts_keep_their_billed_usage():
+    judge = MockJudge(mock_judge_config(repeats=2), DEFAULT_RUBRIC, seed=1)
+    judge._judge_once = lambda prompt, reference, response, repeat_index: JudgeCallResult(
+        scores=None,
+        reason=None,
+        usage=JudgeUsage(input_tokens=120, output_tokens=40, cost_usd=0.004),
+        invalid_reason="judge returned invalid JSON: response is not valid JSON",
+    )
+
+    outcome = judge.evaluate("prompt", None, "response")
+
+    assert outcome.status == "failed"
+    assert outcome.score is None
+    assert outcome.input_tokens == 240
+    assert outcome.output_tokens == 80
+    assert outcome.cost_usd == pytest.approx(0.008)
+    assert outcome.details["usage"] == {
+        "calls": 2,
+        "responses": 2,
+        "valid_verdicts": 0,
+        "invalid_verdicts": 2,
+        "network_errors": 0,
+        "retries": 0,
+        "cost_known_calls": 2,
+    }
+
+
+def test_network_errors_are_counted_and_cost_nothing():
+    judge = MockJudge(mock_judge_config(repeats=2), DEFAULT_RUBRIC, seed=1)
+    judge._judge_once = lambda prompt, reference, response, repeat_index: JudgeCallResult(
+        scores=None, reason=None, usage=None, network_error="judge call failed: status 503"
+    )
+
+    outcome = judge.evaluate("prompt", None, "response")
+
+    assert outcome.status == "failed"
+    assert outcome.cost_usd is None
+    assert outcome.details["usage"]["network_errors"] == 2
+    assert outcome.details["usage"]["responses"] == 0
+    assert judge.total_network_errors == 2
+
+
+def test_provider_retries_are_reported_as_retries_not_repeats():
+    judge = MockJudge(mock_judge_config(repeats=2), DEFAULT_RUBRIC, seed=1)
+    judge._judge_once = lambda prompt, reference, response, repeat_index: JudgeCallResult(
+        scores={"correctness": 3.0, "relevance": 3.0, "instruction_following": 3.0, "clarity": 3.0},
+        reason="ok",
+        usage=JudgeUsage(input_tokens=10, output_tokens=10, cost_usd=0.001),
+        attempts=3,
+    )
+
+    outcome = judge.evaluate("prompt", None, "response")
+
+    assert outcome.status == "completed"
+    assert outcome.details["judgments"] == 2
+    assert outcome.details["usage"]["retries"] == 4
+    assert judge.total_retries == 4
+
+
+def test_partial_cost_coverage_is_exposed():
+    judge = MockJudge(mock_judge_config(repeats=2), DEFAULT_RUBRIC, seed=1)
+    usages = [
+        JudgeUsage(input_tokens=10, output_tokens=10, cost_usd=0.002),
+        JudgeUsage(input_tokens=10, output_tokens=10, cost_usd=None),
+    ]
+    judge._judge_once = lambda prompt, reference, response, repeat_index: JudgeCallResult(
+        scores={"correctness": 3.0, "relevance": 3.0, "instruction_following": 3.0, "clarity": 3.0},
+        reason="ok",
+        usage=usages[repeat_index],
+    )
+
+    outcome = judge.evaluate("prompt", None, "response")
+
+    assert outcome.status == "completed"
+    assert outcome.cost_usd == pytest.approx(0.002)
+    assert outcome.details["usage"]["cost_known_calls"] == 1
+
+
+def test_plan_check_refuses_budget_lower_bound_on_output_tokens():
+    config = mock_judge_config(
+        max_tokens=100000,
+        budget_usd=1.0,
+        input_cost_per_1m=1.0,
+        output_cost_per_1m=10.0,
+    )
+    judge = MockJudge(config, DEFAULT_RUBRIC, seed=1)
+
+    refusal = judge.plan_check(2)
+
+    assert refusal is not None
+    assert "output tokens alone" in refusal
+    assert judge.plan_check(1) is None
+
+
+def test_budget_stopped_outcome_still_reports_usage():
+    config = mock_judge_config(
+        repeats=3, max_calls=1, input_cost_per_1m=1.0, output_cost_per_1m=1.0
+    )
+    judge = MockJudge(config, DEFAULT_RUBRIC, seed=1)
+
+    first = judge.evaluate("prompt", None, "response")
+    second = judge.evaluate("prompt", None, "response")
+
+    assert first.status == "completed"
+    assert second.status == "unavailable"
+    assert second.details["usage"]["calls"] == 0
+
+
+def test_rubric_rejects_duplicate_criterion_ids():
+    import pytest
+
+    with pytest.raises(ValueError, match="unique ids"):
+        Rubric(
+            criteria=[
+                {"id": "quality", "description": "first"},
+                {"id": "quality", "description": "second"},
+            ]
+        )

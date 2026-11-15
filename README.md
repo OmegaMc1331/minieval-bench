@@ -11,11 +11,11 @@ MiniEval is a lightweight Python framework for benchmarking and comparing langua
 - LLM-as-a-judge evaluation with custom rubrics, repeated judgments, budgets and calibration
 - Blind pairwise comparison with position swapping
 - Structured output validation against JSON Schema (Draft 2020-12)
-- Code evaluation: generated Python tested inside a restricted Docker container
-- Statistical analysis: dispersion, percentile bootstrap intervals over question-level units
+- Code evaluation: generated Python tested inside a restricted Docker container, with a process-separated harness whose verdicts cannot be forged by evaluated programs, bounded output capture and an image pinned by digest
+- Statistical analysis: dispersion, percentile bootstrap intervals over question-level units, paired differences between runs
 - Repeated trials with per-repeat derived seeds, deterministic planning and optional shuffling
-- Capped concurrency with request latency, queue delay and total duration reported separately
-- Distinct indicators: request success rate, answer accuracy, evaluation coverage, overall pass rate
+- Capped concurrency with generation latency, evaluation latency, total time and queue delay reported separately
+- Distinct indicators: request success rate, answer accuracy (deterministic metrics), JSON conformance, code pass rate, judge score, evaluation coverage, overall pass rate
 - Token and cost totals with explicit coverage; generation and evaluation costs reported separately
 - Bounded retries for transient provider errors only, honoring `Retry-After`
 - Error messages sanitized before export; no API keys, tokens or credentials in reports
@@ -205,7 +205,8 @@ evaluators:
 - The judge must answer with JSON `{"scores": {...}, "reason": "..."}`. The verdict is validated: all configured criteria present, no unknown criteria, numeric scores within scale bounds. A judge-supplied overall score is ignored; MiniEval computes the overall by normalizing each criterion to `[0, 1]` and applying the configured weights. Malformed verdicts become evaluation failures, never zero scores.
 - The evaluated response is wrapped in explicit markers and framed as data to analyze, not instructions; it cannot change the criteria or the output format. This reduces prompt-injection risk but does not guarantee perfect isolation.
 - With `repeats > 1`, each judgment is independent; per-criterion means, standard deviations and the count of failed judgments are recorded, separating judge variability from generation variability.
-- Budgets: the planned number of judge calls is computed and printed before the run; `max_calls` refuses to start if the plan exceeds the cap and stops judging when reached. `budget_usd` requires judge pricing to be configured — with unknown pricing MiniEval refuses rather than guessing — and stops judging once the accumulated cost crosses the budget.
+- Budgets: the planned number of judge calls is computed and printed before the run; `max_calls` is an atomically enforced cap shared by all concurrent workers — it refuses to start if the plan exceeds the cap and stops judging when reached. `budget_usd` requires judge pricing to be configured — with unknown pricing MiniEval refuses rather than guessing — and is a documented stop-on-observed guard: judging stops once the recorded spend reaches it, but input-token cost cannot be pre-bounded, so a call already in flight may overshoot it. When `max_tokens` and pricing are known, runs whose output-token cost alone (a lower bound) exceeds `budget_usd` are refused at planning time.
+- Judge accounting is independent of verdict validity: every evaluation records the number of calls, responses received, valid verdicts, invalid verdicts, network errors and provider retries, and calls that were billed but produced an unusable verdict still contribute their tokens and cost, with a known-cost count so partial totals are visible.
 - Judge tokens and costs are recorded separately from generation costs in every report.
 
 Interpretation: a judge score is the opinion of the configured judge model under the configured rubric — a subjective measure, not a universal quality truth. Judges can be biased by response length, style or phrasing; the prompt explicitly states that length is not a quality indicator, and repeated judgments expose instability instead of hiding it.
@@ -229,11 +230,11 @@ minieval-bench pairwise --input results/ --config benchmarks/judge-mock.yaml
 minieval-bench pairwise --input results/ --config bench.yaml --models model-a model-b
 ```
 
-For every entry and repeat answered by both models, the judge sees the question and two anonymized responses and must answer `A`, `B` or `tie`. Each pair is judged twice with the positions swapped; verdicts are mapped back to the real models. Contradictory swapped verdicts are recorded as disagreements and never force-resolved. The output is a standalone HTML page with the two responses side by side (model identities revealed only after judging), the per-order verdicts and per-model tallies. No Elo or tournament ranking is computed.
+For every entry and repeat answered by both models, the judge sees the question and two anonymized responses and must answer `A`, `B` or `tie`. Each pair is judged twice with the positions swapped; verdicts are mapped back to the real models and both verdicts are always kept. Outcomes are explicit: only concordant verdicts count as wins or ties; a win combined with a tie is a mixed verdict, opposite verdicts are disagreements, and fewer than two judgments, judge errors and missing prompts are reported as such — never force-resolved into a winner. Judge errors are masked like provider errors, judge calls honor `max_calls`, and per-judgment tokens and costs are tallied with coverage. The output is a standalone HTML page with the two responses side by side (model identities revealed only after judging), the per-order verdicts and per-model tallies. No Elo or tournament ranking is computed.
 
 ### Structured output (`json_schema`)
 
-Validation uses `jsonschema` with Draft 2020-12. Extraction policy: the response is parsed directly as JSON; on failure the first balanced JSON object or array block is used; if none parses, the evaluation completes with `json_valid: false`. Schema violations are reported as `path: message` entries (capped at 20), including missing required properties with their resolved path. Schemas are validated at dataset load time and remote `$ref` URLs are rejected — no network retrieval ever happens. Structural conformance is not factual correctness and is reported separately.
+Validation uses `jsonschema` with Draft 2020-12. Extraction policy: the response is parsed directly as JSON; on failure the first balanced JSON object or array block is used; if none parses, the evaluation completes with `json_valid: false`. A response containing valid JSON `null` parses successfully and validates against schemas that allow `null` — parse failure and a `null` value are distinct. Schema violations are reported as `path: message` entries (capped at 20), including missing required properties with their resolved path. Schemas are validated at dataset load time and remote `$ref` URLs are rejected — no network retrieval ever happens. Structural conformance is not factual correctness and is reported separately.
 
 ### Code evaluation (`code_tests`)
 
@@ -243,21 +244,29 @@ Generated Python is never executed on the host. With `evaluators.code` configure
 evaluators:
   code:
     runtime: docker
-    image: python:3.12-slim        # pinned image
+    image: python:3.12-slim@sha256:5e2bdb1b0d542d5039cffb8181c65930093949194a65c365dfb1b0fe13a4fa5b
     timeout_seconds: 30            # wall-clock, container killed on expiry
     per_test_timeout_seconds: 5
     memory_mb: 256
     cpus: 1.0
     pids_limit: 64
+    max_output_bytes: 65536        # hard cap on captured stdout/stderr
 ```
 
-Container restrictions: `--network none`, read-only root filesystem, non-root user (65534), all Linux capabilities dropped, `no-new-privileges`, pid/memory/cpu limits, a small noexec tmpfs on `/tmp`, automatic removal, and a host-side timeout that kills the container. The submission and your test module are piped to `python -I -` over stdin as string literals — no shell command is built from untrusted strings. The harness runs each `test_*` function with a per-test alarm timeout and prints one JSON line with per-test results; timeouts, runtime errors, syntax errors and resource-limit kills are distinguished from one another.
+Container restrictions: `--network none`, read-only root filesystem, non-root user (65534), all Linux capabilities dropped, `no-new-privileges`, pid/memory/cpu limits, a small noexec tmpfs on `/tmp`, automatic removal plus an explicit force-remove on every exit path, and a host-side timeout that kills the container. The default image is pinned by an immutable digest (the digest the adversarial test suite executes against); override `image` only with a reference you trust.
 
-If Docker is not installed or not reachable, code evaluations are reported as `unavailable` (an infrastructure condition) and never executed on the host, never silently skipped and never counted as functional failures. Docker reduces the risk of running untrusted code but is not a perfect sandbox; treat results from untrusted benchmarks accordingly. The Docker-dependent integration tests are marked `docker` and only run with `MINIEVAL_DOCKER_TESTS=1` and a reachable daemon.
+Inside the container the harness is split into two processes so evaluated programs cannot forge results:
+
+- a **worker** process executes the submission and your test module and reports per-test outcomes on a dedicated pipe; its stdout/stderr carry only program noise;
+- a trusted **controller** process enforces the time and byte caps, collects the worker report and prints the single verdict line the host parses — the evaluated program never holds a file descriptor to that channel.
+
+Before accepting a verdict the host validates its structure: reported test names must exactly match the `test_*` functions of your tests module (derived statically), duplicates and unknown names are rejected as integrity failures, and a run with no executed test cannot produce a perfect score. Timeouts, output overflows, memory-limit kills, program crashes, runtime errors and syntax errors are distinguished from one another; output is captured with a hard byte cap on both sides, so a program printing unbounded output is killed and reported as an overflow rather than buffering its output on the host.
+
+If Docker is not installed or not reachable, code evaluations are reported as `unavailable` (an infrastructure condition) and never executed on the host, never silently skipped and never counted as functional failures. Docker reduces the risk of running untrusted code but is not a perfect sandbox: the verdict channel and the verdict decision are trusted, while per-test outcomes rely on the worker process's integrity — a malicious submission with in-process introspection could in principle forge them. The full threat model, the guarantees and the residual risks are documented in `docs/V0.3.1_AUDIT.md`. The Docker-dependent integration tests (including adversarial and output-limit scenarios) are marked `docker` and only run with `MINIEVAL_DOCKER_TESTS=1` and a reachable daemon; a dedicated `docker-integration` workflow runs them on demand.
 
 ### Statistical analysis
 
-For each model MiniEval computes, per metric family (binary pass rate, latency, judge score), the mean, median, standard deviation, min, max and observation count over question-level units — repeats of one question are averaged first, so repeated trials are not treated as independent observations. Confidence intervals at the configured level use a percentile bootstrap (default 1000 iterations, seeded from the run seed, unit = question). No interval is produced with fewer than two questions. The run comparison adds paired per-question score differences when both runs share the dataset.
+For each model MiniEval computes, per metric family (binary pass rate, generation latency, judge score), the mean, median, standard deviation, min, max and observation count over question-level units — repeats of one question are averaged first, so repeated trials are not treated as independent observations. Confidence intervals at the configured level use a percentile bootstrap (default 1000 iterations, seeded from the run seed, unit = question). No interval is produced with fewer than two questions. Each interval reports its unit count, the questions excluded from it (failed requests, unavailable evaluations) and the conditional nature of the pass-rate interval: it describes evaluated trials only. The run comparison adds paired per-question score differences when both runs share the dataset; paired intervals are never produced when runs cannot be paired.
 
 Caveats that the reports also state: intervals describe the observed data; overlapping or non-overlapping intervals are not a significance test between models, and nothing in MiniEval claims statistical superiority between models.
 
@@ -268,19 +277,21 @@ MiniEval reports four rates with explicit denominators, because they answer diff
 | Indicator | Formula | Question answered |
 | --- | --- | --- |
 | Request success rate | requests without provider error / planned requests | Is the provider reliable? |
-| Answer accuracy | correct answers / evaluable answers (successful requests) | When it answers, is it right? |
+| Answer accuracy | correct answers / evaluable deterministic answers | When it answers, is it right? |
 | Evaluation coverage | evaluated trials / planned requests | How much of the plan produced a scored answer? |
 | Overall pass rate | correct answers / planned requests | Combining both, how often does it succeed? |
 
 A model with frequent provider errors can keep a high accuracy on the answers it does produce; the success rate and the overall pass rate expose that. Failed requests count as not passed for the overall pass rate but never count as incorrect answers in the accuracy. `score` in the JSON output is kept as an alias of `answer_accuracy` for compatibility with v0.1.0.
 
+Since 0.3.1, `answer_accuracy` covers the deterministic metrics (`exact_match`, `contains`, `regex`) only. The other evaluators get their own indicators with their own denominators — `json_schema_conformance`, `code_eval_pass_rate` with `code_tests_passed`/`code_tests_total`, and `judge_score_mean` with judged/eligible counts — because they measure different things and mixing them into one number would be arbitrary. `evaluable`, `evaluation_coverage` and `overall_pass_rate` remain cross-evaluator aggregates over binary verdicts; on a mixed dataset, read the per-evaluator breakdown (in the markdown report, the terminal table and the HTML dashboard) to see each denominator.
+
 ### Partial consumption data
 
-Token and cost totals are sums over the requests that reported them. When only some successful requests report usage, the total is shown as partial: `45 (7/10)` means 45 tokens summed over 7 of 10 successful requests. A value of `n/a` means no request reported the data — it is never used for a real zero. Cost is computed from `input_cost_per_1m` and `output_cost_per_1m` when both are set; otherwise LiteLLM's bundled price map is consulted; when neither source knows the price, the cost is `n/a`. Tokens may be reported while cost is `n/a` and vice versa.
+Token and cost totals are sums over the requests that reported them. When only some successful requests report usage, the total is shown as partial: `45 (7/10)` means 45 tokens summed over 7 of 10 successful requests. A value of `n/a` means no request reported the data — it is never used for a real zero. Cost is computed from `input_cost_per_1m` and `output_cost_per_1m` when both are set; otherwise LiteLLM's bundled price map is consulted; when neither source knows the price, the cost is `n/a`. Tokens may be reported while cost is `n/a` and vice versa. The same policy applies to judge and pairwise usage, including calls that were billed but produced an unusable verdict.
 
 ### Latency, queue and duration
 
-Each trial records `latency_ms`, the duration of the provider call itself, and `queue_ms`, the time the task waited in the execution pool before starting. Waiting in the queue is never counted as model response time. The manifest records `duration_seconds`, the wall-clock time of the whole run. Latency percentiles are computed over successful requests only.
+Each trial records four durations: `generation_ms` (the model call itself, provider retries and backoffs included), `evaluation_ms` (the evaluator run — a remote judge or the Docker sandbox), `total_ms` (generation plus evaluation) and `queue_ms` (time spent waiting in the execution pool before starting). `latency_ms` is kept as the generation latency so historical consumers keep its meaning; runs produced before 0.3.1 recorded a single mixed latency in that field, which is displayed as-is and marked legacy rather than recomputed. Waiting in the queue is never counted as model response time. The manifest records `duration_seconds`, the wall-clock time of the whole run. Latency percentiles are computed over successful requests only.
 
 ## Reproducibility
 
@@ -314,7 +325,7 @@ minieval-bench --version
 
 `run` writes `report.html` next to the other reports; pass `--no-html` to skip it. Pass `--snapshot` to embed the dataset (prompts and references) in `results.json` and the HTML report, so the trial explorer can display them.
 
-`evaluate` re-evaluates stored responses with the evaluators of the given config — without calling the candidate models again — and writes a new `reevaluated/` directory next to the input (originals are never modified). Trials whose entry id is missing from the dataset are kept unchanged with an explicit warning; nothing is silently regenerated.
+`evaluate` re-evaluates stored responses with the evaluators of the given config — without calling the candidate models again — and writes a new `reevaluated/` directory next to the input (originals are never modified). Stored answers are only reused when the question can be matched: an identical dataset fingerprint verifies every entry, and an embedded dataset snapshot (from `--snapshot`) verifies per-entry fingerprints of the prompt, reference, system prompt and metric. Entries whose question changed are reported as conflicts and kept unchanged; when neither source of truth is available, matching is by entry id only and flagged unverified. The reevaluated manifest records the source run (benchmark, date, version, seed, dataset fingerprint, models) and the reevaluation (date, version, evaluators, judge rubric fingerprint, matching summary) as separate blocks, so the report always distinguishes generated data from re-evaluated data. Trials whose entry id is missing from the dataset are kept unchanged with an explicit warning; nothing is silently regenerated.
 
 ## Reports
 
@@ -325,13 +336,13 @@ minieval-bench --version
 - `report.md`: the same statistics as Markdown
 - `report.html`: the interactive report described below
 
-Example `report.md`:
+Example `report.md` (mock benchmark):
 
 ```markdown
 # MiniEval report: mock-demo
 
-- MiniEval version: 0.1.1
-- Created (UTC): 2026-11-14T00:37:16.442457+00:00
+- MiniEval version: 0.3.1
+- Created (UTC): 2026-11-15T01:26:23.236491+00:00
 - Seed: 42
 - Repeats: 3
 - Concurrency: 4
@@ -341,10 +352,10 @@ Example `report.md`:
 
 ## Results
 
-| Model | Requests | OK | Failed | Success | Accuracy | Coverage | Overall | Median (ms) | P95 (ms) | Queue (ms) | In tokens | Out tokens | Cost (USD) |
-| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
-| mock-free | 18 | 18 | 0 | 100.0% | 50.0% | 100.0% | 50.0% | 25.8 | 40.5 | 39.6 | 96 | 72 | n/a |
-| mock-priced | 18 | 18 | 0 | 100.0% | 50.0% | 100.0% | 50.0% | 32.0 | 42.5 | 153.1 | 96 | 72 | 0.000156 |
+| Model | Requests | OK | Failed | Success | Accuracy | Coverage | Overall | Median gen (ms) | P95 gen (ms) | Median eval (ms) | Median total (ms) | Queue (ms) | In tokens | Out tokens | Cost (USD) |
+| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
+| mock-free | 18 | 18 | 0 | 100.0% | 50.0% | 100.0% | 50.0% | 25.8 | 40.4 | 0.0 | 25.8 | 39.4 | 96 | 72 | n/a |
+| mock-priced | 18 | 18 | 0 | 100.0% | 50.0% | 100.0% | 50.0% | 31.8 | 43.0 | 0.0 | 31.8 | 154.2 | 96 | 72 | 0.000156 |
 
 Indicators, with their explicit denominators:
 
@@ -352,6 +363,11 @@ Indicators, with their explicit denominators:
 - **Accuracy** = correct answers / evaluable answers (successful requests).
 - **Coverage** = evaluated trials / planned requests.
 - **Overall** = correct answers / planned requests; failed requests count as not passed.
+
+Latency columns measure the model call only (provider retries included). Evaluation
+latency measures the evaluator run and total latency covers generation plus
+evaluation. Reports written before 0.3.1 stored a single `latency_ms` mixing
+both; those values are shown as-is.
 ```
 
 Reports produced by v0.1.0 remain readable: indicators that can be derived from the old fields (accuracy, coverage, overall pass rate, incorrect count) are computed on load; data that the old format does not contain (per-repeat seeds, duration, consumption coverage) is shown as `n/a`.
@@ -395,11 +411,21 @@ The report follows the system light or dark theme, switches manually without rel
 minieval-bench compare --run results/run-a --run results/run-b --output comparison.html
 ```
 
-The command accepts two or more run directories and writes a self-contained HTML report. It first shows the experimental conditions of every run with differing cells highlighted (seed, repeats, concurrency, dataset fingerprint, version), then a comparability box listing every detected difference: changed datasets, changed model configuration behind a same display name, differing seeds or parameters. Per common model, each indicator is shown per run with an absolute delta (first → last) and a relative delta. Relative deltas are computed only when both values exist and the reference value is not zero; everything else reads `n/a`. No statement of statistical superiority is generated.
+The command accepts two or more run directories and writes a self-contained HTML report. It first shows the experimental conditions of every run with differing cells highlighted (seed, repeats, concurrency, dataset fingerprint, version), then a comparability box listing every detected difference: changed datasets, changed model configuration behind a same display name, differing seeds or parameters, mixed latency semantics (runs produced before 0.3.1), and evaluator drift — differing judge models, differing judge rubrics (criteria, scales or weights), judge configuration unknown for pre-0.3.1 runs, or differing code-evaluation settings. Subjective scores from different rubrics or judge models are never treated as directly comparable. Per common model, each indicator — including the per-evaluator rates — is shown per run with an absolute delta (first → last) and a relative delta. Relative deltas are computed only when both values exist and the reference value is not zero; everything else reads `n/a`. No statement of statistical superiority is generated.
+
+When exactly two runs share an identical dataset, the report adds paired per-question pass-rate differences (repeats averaged first): observed difference, bootstrap interval and unit count, computed only on questions present in both runs and clearly separated from the comparability verdict.
 
 Because equal display names do not prove equal models, configuration fields (provider, model string, temperature, max tokens, timeout) are compared and any drift is reported. When datasets differ, score differences are explicitly flagged as potentially caused by the dataset change.
 
 ![Run comparison report](docs/screenshots/comparison.png)
+
+The latency section labels the displayed duration (generation) and reports evaluation and total medians per model:
+
+![Latency section](docs/screenshots/report-latency-separation.png)
+
+Two-run comparisons over an identical dataset include paired per-question differences with their bootstrap interval:
+
+![Paired differences](docs/screenshots/comparison-paired.png)
 
 ## CSV export
 
@@ -407,7 +433,7 @@ Because equal display names do not prove equal models, configuration fields (pro
 minieval-bench export --input results/ --format csv --output results/trials.csv
 ```
 
-Exports one row per trial with the columns: `model, entry_id, repeat, ok, passed, latency_ms, queue_ms, input_tokens, output_tokens, cost_usd, error_type, error_message`. Conventions: UTF-8; missing values are empty fields and are never converted to zero; booleans are `true`/`false`; cells that could be interpreted as spreadsheet formulas (starting with `=`, `+`, `-`, `@` or a tab) are prefixed with a single quote. Responses are intentionally not included; use the JSON export or the HTML trial explorer for them.
+Exports one row per trial with the columns: `model, entry_id, repeat, ok, passed, latency_ms, generation_ms, evaluation_ms, total_ms, queue_ms, input_tokens, output_tokens, cost_usd, error_type, error_message`. When trials carry evaluation records, a second file `evaluations.csv` is written with one row per evaluation: evaluator type, status, binary verdict, score, judgment count, evaluation tokens and cost, code test totals and JSON validation error counts. Conventions: UTF-8; missing values are empty fields and are never converted to zero; booleans are `true`/`false`; cells that could be interpreted as spreadsheet formulas (starting with `=`, `+`, `-`, `@` or a tab) are prefixed with a single quote. Responses are intentionally not included; use the JSON export or the HTML trial explorer for them.
 
 ## Local history
 
@@ -420,11 +446,13 @@ Scans a directory and its subdirectories for runs (a `manifest.json`, or a `resu
 ## Limitations
 
 - Judge scores are subjective opinions of the configured judge model; they are reported separately from objective metrics and never merged with them.
-- Docker reduces the risk of executing untrusted code but is not a perfect sandbox; code evaluation requires a reachable Docker daemon and is otherwise reported as unavailable.
+- Docker reduces the risk of executing untrusted code but is not a perfect sandbox. In the code-evaluation harness the verdict channel and verdict decision are trusted, but a malicious submission with in-process introspection could in principle forge per-test outcomes inside the worker; see the threat model in `docs/V0.3.1_AUDIT.md`. Code evaluation requires a reachable Docker daemon and is otherwise reported as unavailable.
 - The per-test timeout inside the container relies on `signal.alarm` (Linux containers); a run away before the first test still hits the wall-clock container timeout.
 - Code evaluation supports Python only, with the pinned container image; no other language or runtime is planned for this version.
+- `budget_usd` is a stop-on-observed guard: input-token cost cannot be pre-bounded, so an in-flight judge call may overshoot it.
 - Latency numbers depend on concurrency and network conditions; compare medians across runs with the same `concurrency`.
 - Bootstrap intervals describe observed data; they are not significance tests, and no model is declared statistically superior.
+- Estimated costs (from pricing fields or LiteLLM's price map) can differ from actual provider billing.
 - There is no checkpointing: an interrupted run cannot resume; rerun it instead.
 - `results.json` and `report.html` contain full responses and judge reasons; review before sharing.
 - The trial explorer paginates to keep the DOM small, but the whole dataset is embedded in the HTML file; there is no lazy loading from disk.
@@ -436,9 +464,10 @@ Scans a directory and its subdirectories for runs (a `manifest.json`, or a `resu
 uv sync
 uv run ruff check .
 uv run pytest
+uv run pytest --cov=minieval_bench          # line coverage (95% offline)
 ```
 
-The test suite runs fully offline using the mock provider.
+The test suite runs fully offline using the mock provider. Docker integration tests (sandbox restrictions, adversarial submissions, output limits) are marked `docker`, excluded by default, and run with `MINIEVAL_DOCKER_TESTS=1` and a reachable daemon — locally or through the on-demand `docker-integration` GitHub Actions workflow.
 
 ## Contributing
 

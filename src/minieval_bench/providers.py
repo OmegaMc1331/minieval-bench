@@ -30,6 +30,7 @@ class ProviderResponse:
     input_tokens: int | None
     output_tokens: int | None
     cost_usd: float | None
+    attempts: int = 1
 
 
 def mask_secrets(text: str) -> str:
@@ -119,7 +120,7 @@ class LitellmProvider:
         if self.model.drop_params:
             kwargs["drop_params"] = True
 
-        response = self._completion_with_retries(litellm, messages, kwargs)
+        response, attempts = self._completion_with_retries(litellm, messages, kwargs)
 
         text = response.choices[0].message.content or ""
         usage = getattr(response, "usage", None)
@@ -133,12 +134,16 @@ class LitellmProvider:
             input_tokens=input_tokens,
             output_tokens=output_tokens,
             cost_usd=cost,
+            attempts=attempts,
         )
 
     def _completion_with_retries(self, litellm, messages: list[dict], kwargs: dict):
         for attempt in range(MAX_REQUEST_ATTEMPTS):
             try:
-                return litellm.completion(model=self.model.model, messages=messages, **kwargs)
+                return (
+                    litellm.completion(model=self.model.model, messages=messages, **kwargs),
+                    attempt + 1,
+                )
             except Exception as exc:
                 if attempt == MAX_REQUEST_ATTEMPTS - 1 or not is_transient_error(exc):
                     raise

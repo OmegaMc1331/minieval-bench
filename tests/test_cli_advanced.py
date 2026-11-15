@@ -359,3 +359,110 @@ def test_calibrate_requires_calibration_file(tmp_path):
 
     assert result.exit_code == 1
     assert "judge.calibration" in result.output
+
+
+def test_evaluate_records_provenance_and_verified_matching(tmp_path):
+    run_dir = tmp_path / "run"
+    runner.invoke(
+        app, ["run", "--config", str(SCHEMA_CONFIG), "--output", str(run_dir), "--snapshot",
+              "--no-html"],
+        env=WIDE,
+    )
+
+    result = runner.invoke(
+        app, ["evaluate", "--input", str(run_dir), "--config", str(SCHEMA_CONFIG)], env=WIDE
+    )
+
+    assert result.exit_code == 0
+    reevaluated = json.loads(
+        (run_dir / "reevaluated" / "results.json").read_text(encoding="utf-8")
+    )
+    manifest = reevaluated["manifest"]
+    assert manifest["source_run"]["dataset_sha256"] == manifest["reevaluation"]["dataset_sha256"]
+    assert manifest["reevaluation"]["matching"]["basis"] == "dataset-identical"
+    assert manifest["reevaluation"]["matching"]["verified"] > 0
+    assert manifest["reevaluation"]["matching"]["conflicts"] == []
+    assert "Source run" in result.output
+
+
+def test_evaluate_flags_changed_prompts_as_conflicts(tmp_path):
+    run_dir = tmp_path / "run"
+    runner.invoke(
+        app, ["run", "--config", str(SCHEMA_CONFIG), "--output", str(run_dir), "--snapshot",
+              "--no-html"],
+        env=WIDE,
+    )
+    original = json.loads((run_dir / "results.json").read_text(encoding="utf-8"))
+    schema_path = tmp_path / "schema-changed.jsonl"
+    first = json.loads((run_dir / "results.json").read_text(encoding="utf-8"))["dataset"][0]
+    changed = dict(first, prompt=first["prompt"] + " with an extra instruction")
+    schema_path.write_text(json.dumps(changed) + "\n", encoding="utf-8")
+    config_path = tmp_path / "changed.yaml"
+    config_path.write_text(
+        f"benchmark: changed\ndataset: {schema_path}\nmodels:\n  - name: mock-demo\n"
+        "    provider: mock\n",
+        encoding="utf-8",
+    )
+
+    result = runner.invoke(
+        app, ["evaluate", "--input", str(run_dir), "--config", str(config_path)], env=WIDE
+    )
+
+    assert result.exit_code == 0
+    assert "changed since the source run" in result.output
+    reevaluated = json.loads(
+        (run_dir / "reevaluated" / "results.json").read_text(encoding="utf-8")
+    )
+    matching = reevaluated["manifest"]["reevaluation"]["matching"]
+    assert matching["conflicts"] == [first["id"]]
+    assert reevaluated["trials"][0]["evaluation"] == original["trials"][0]["evaluation"]
+
+
+def test_evaluate_warns_when_matching_is_unverified(tmp_path):
+    run_dir = tmp_path / "run"
+    runner.invoke(
+        app, ["run", "--config", str(SCHEMA_CONFIG), "--output", str(run_dir), "--no-html"],
+        env=WIDE,
+    )
+    schema_path = tmp_path / "schema-other.jsonl"
+    schema_path.write_text(
+        '{"id": "c1", "prompt": "different question entirely", "metric": "json_schema",'
+        ' "json_schema": {"type": "object"}}\n',
+        encoding="utf-8",
+    )
+    config_path = tmp_path / "other.yaml"
+    config_path.write_text(
+        f"benchmark: other\ndataset: {schema_path}\nmodels:\n  - name: mock-demo\n"
+        "    provider: mock\n",
+        encoding="utf-8",
+    )
+
+    result = runner.invoke(
+        app, ["evaluate", "--input", str(run_dir), "--config", str(config_path)], env=WIDE
+    )
+
+    assert result.exit_code == 0
+    assert "cannot be verified" in result.output
+    reevaluated = json.loads(
+        (run_dir / "reevaluated" / "results.json").read_text(encoding="utf-8")
+    )
+    matching = reevaluated["manifest"]["reevaluation"]["matching"]
+    assert matching["basis"] == "entry-id-only"
+    assert matching["unverified"] >= 1
+
+
+def test_run_manifest_records_judge_rubric_fingerprint(tmp_path):
+    run_dir = tmp_path / "run"
+    runner.invoke(
+        app, ["run", "--config", str(JUDGE_CONFIG), "--output", str(run_dir), "--no-html"],
+        env=WIDE,
+    )
+
+    manifest = json.loads((run_dir / "manifest.json").read_text(encoding="utf-8"))
+
+    assert manifest["judge"]["model"] is None
+    assert manifest["judge"]["provider"] == "mock"
+    assert len(manifest["judge"]["rubric_fingerprint"]) == 64
+    assert [c["id"] for c in manifest["judge"]["criteria"]] == [
+        "correctness", "relevance", "instruction_following", "clarity"
+    ]

@@ -5,11 +5,12 @@ from pathlib import Path
 import pytest
 
 from minieval_bench.config import load_config, load_dataset
-from minieval_bench.models import DatasetEntry, ModelConfig
+from minieval_bench.models import DatasetEntry, EvaluationOutcome, ModelConfig
 from minieval_bench.providers import MockProvider, ProviderResponse
 from minieval_bench.runner import (
     PlannedTrial,
     build_plan,
+    compute_stats,
     repeat_seed,
     run_benchmark,
     run_trial,
@@ -204,3 +205,76 @@ def test_run_trial_evaluates_successful_response():
     assert trial.passed is True
     assert trial.input_tokens is not None
     assert trial.error_type is None
+
+
+class SlowEvaluatorRunner:
+    def run(self, code: str, tests: str):
+        import time
+
+        time.sleep(0.15)
+        return EvaluationOutcome(
+            evaluator="code_tests", status="completed", passed=True, score=1.0
+        )
+
+
+def test_run_trial_separates_generation_and_evaluation_latency():
+    model = ModelConfig(name="mock-a", provider="mock")
+    entry = make_entry(
+        metric="code_tests", tests="def test_add():\n    assert True"
+    )
+    planned = make_planned(model, entry)
+
+    trial = run_trial(
+        MockProvider(model), planned, queued_at=0.0, code_runner=SlowEvaluatorRunner()
+    )
+
+    assert trial.generation_ms is not None
+    assert trial.evaluation_ms is not None
+    assert trial.evaluation_ms >= 140
+    assert trial.generation_ms < 100
+    assert trial.total_ms == pytest.approx(trial.generation_ms + trial.evaluation_ms)
+    assert trial.latency_ms == pytest.approx(trial.generation_ms)
+    assert trial.latency_ms < 100
+
+
+def test_run_trial_failed_request_keeps_generation_latency():
+    model = ModelConfig(name="broken", provider="mock")
+    planned = make_planned(model, make_entry())
+
+    trial = run_trial(FailingProvider(), planned, queued_at=0.0)
+
+    assert trial.generation_ms is not None
+    assert trial.latency_ms == pytest.approx(trial.generation_ms)
+    assert trial.evaluation_ms is None
+    assert trial.total_ms == pytest.approx(trial.generation_ms)
+
+
+def test_compute_stats_uses_generation_latency_for_new_runs():
+    trial = run_trial(
+        MockProvider(ModelConfig(name="mock-a", provider="mock")),
+        make_planned(ModelConfig(name="mock-a", provider="mock"), make_entry()),
+        queued_at=0.0,
+    )
+
+    stats = compute_stats([trial])
+
+    assert stats[0].median_latency_ms == pytest.approx(trial.generation_ms)
+    assert stats[0].median_evaluation_ms is not None
+    assert stats[0].median_total_ms is not None
+
+
+def test_compute_stats_falls_back_to_legacy_latency():
+    legacy = run_trial(
+        MockProvider(ModelConfig(name="mock-a", provider="mock")),
+        make_planned(ModelConfig(name="mock-a", provider="mock"), make_entry()),
+        queued_at=0.0,
+    )
+    legacy = legacy.model_copy(
+        update={"generation_ms": None, "evaluation_ms": None, "total_ms": None}
+    )
+
+    stats = compute_stats([legacy])
+
+    assert stats[0].median_latency_ms == pytest.approx(legacy.latency_ms)
+    assert stats[0].median_evaluation_ms is None
+    assert stats[0].median_total_ms is None

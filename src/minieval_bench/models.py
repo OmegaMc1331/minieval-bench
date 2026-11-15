@@ -57,7 +57,9 @@ class CodeEvalConfig(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     runtime: Literal["docker"] = "docker"
-    image: str = "python:3.12-slim"
+    image: str = (
+        "python:3.12-slim@sha256:5e2bdb1b0d542d5039cffb8181c65930093949194a65c365dfb1b0fe13a4fa5b"
+    )
     timeout_seconds: float = Field(default=30, gt=0)
     per_test_timeout_seconds: float = Field(default=10, gt=0)
     memory_mb: int = Field(default=256, ge=16)
@@ -125,6 +127,14 @@ class DatasetEntry(BaseModel):
                 compile(self.tests, f"{self.id}:tests", "exec")
             except SyntaxError as exc:
                 raise ValueError(f"invalid tests module: {exc}") from exc
+            from minieval_bench.evaluation.code import expected_test_names
+
+            try:
+                test_names = expected_test_names(self.tests)
+            except ValueError as exc:
+                raise ValueError(str(exc)) from exc
+            if not test_names:
+                raise ValueError("tests module must define at least one test_ function")
         return self
 
 
@@ -157,6 +167,9 @@ class TrialResult(BaseModel):
     queue_ms: float | None = None
     plan_index: int | None = None
     evaluation: EvaluationOutcome | None = None
+    generation_ms: float | None = None
+    evaluation_ms: float | None = None
+    total_ms: float | None = None
 
 
 class ModelStats(BaseModel):
@@ -170,6 +183,8 @@ class ModelStats(BaseModel):
     score: float | None
     median_latency_ms: float | None
     p95_latency_ms: float | None
+    median_evaluation_ms: float | None = None
+    median_total_ms: float | None = None
     input_tokens: int | None
     output_tokens: int | None
     cost_usd: float | None
@@ -188,6 +203,16 @@ class ModelStats(BaseModel):
     evaluation_output_tokens: int | None = None
     evaluation_cost_usd: float | None = None
     evaluation_cost_reported: int | None = None
+    deterministic_trials: int | None = None
+    json_schema_conformance: float | None = None
+    json_schema_trials: int | None = None
+    code_eval_pass_rate: float | None = None
+    code_eval_trials: int | None = None
+    code_tests_passed: int | None = None
+    code_tests_total: int | None = None
+    judge_score_mean: float | None = None
+    judge_evaluations: int | None = None
+    judge_trials: int | None = None
 
     @model_validator(mode="before")
     @classmethod
@@ -225,3 +250,6 @@ class Manifest(BaseModel):
     shuffle: bool | None = None
     evaluators: dict | None = None
     statistics: dict | None = None
+    judge: dict | None = None
+    source_run: dict | None = None
+    reevaluation: dict | None = None

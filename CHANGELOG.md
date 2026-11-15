@@ -2,6 +2,48 @@
 
 All notable changes to this project are documented in this file. The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and the project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.3.1] - 2026-11-15
+
+Reliability, security and evaluation-integrity corrective release. The full defect analysis is in `docs/V0.3.1_AUDIT.md`.
+
+### Fixed
+
+- Code evaluation verdicts can no longer be forged by evaluated programs: the in-container harness is split into a trusted controller process and a worker process, the host parses only the controller's verdict, reported test identities must match the dataset tests exactly, and zero-executed-test runs cannot produce a perfect score. Twelve adversarial scenarios (forged verdicts, injected tests, report-pipe fd spray, worker kill, malformed output, ...) are covered by real Docker tests.
+- Docker output capture is bounded during capture on both the host and inside the container: exceeding `max_output_bytes` kills the producer and yields a distinct `output_overflow` outcome instead of buffering unbounded output; containers are force-removed on every exit path including timeouts, overflows and exceptions. Measured on the development host: 512 MB of container output against a 64 KB cap kept the host working set within 0.7 MB of baseline.
+- `latency_ms` now measures the model call only. Trials record `generation_ms`, `evaluation_ms`, `total_ms` and `queue_ms` separately; reports, statistics, exports, the dashboard and comparisons label each duration, and runs produced before 0.3.1 are marked as legacy (mixed generation and evaluation latency) rather than recomputed.
+- Judge call admission is atomic under concurrency: `max_calls` can no longer be exceeded by parallel workers, and every evaluation records calls, responses, valid and invalid verdicts, network errors and provider retries. Billed calls with unusable verdicts contribute their tokens and cost, with a known-cost count for coverage.
+- `answer_accuracy` covers deterministic metrics only; JSON Schema conformance, code evaluation pass rate, code test totals and judge scores get separate fields with explicit per-evaluator denominators instead of one mixed population.
+- `evaluate` verifies question matching before reusing stored answers: identical dataset fingerprint or per-entry prompt/reference fingerprints from the embedded snapshot; changed prompts are conflicts kept unchanged, unverifiable matches are flagged. Reevaluated runs record source-run and reevaluation provenance as separate manifest blocks and never modify the originals.
+- `compare` warns about differing judge rubrics or judge models, unknown judge configuration in pre-0.3.1 runs, differing code evaluation settings and mixed latency semantics; two-run comparisons over an identical dataset include per-model paired differences with a bootstrap interval and explicit unit counts.
+- Pairwise outcomes distinguish confirmed wins, ties, mixed verdicts (win + tie), disagreements, incomplete, judge errors and unavailable comparisons; both verdicts are kept, provider errors are masked, and judge calls honor `max_calls` with per-judgment token and cost usage.
+- JSON `null` responses parse and validate against schemas that allow `null` (parse failures are signalled by the error channel, not a `None` value); rubrics reject duplicate criterion ids.
+
+### Security
+
+- The default code evaluation image is pinned by digest (`python:3.12-slim@sha256:5e2bdb...`), verified against the adversarial suite; the update procedure is documented in the audit. Unavailable Docker still yields `unavailable` outcomes and never falls back to host execution.
+- Threat model and residual risks of the code-evaluation sandbox are documented in `docs/V0.3.1_AUDIT.md`: the verdict channel and decision are trusted, while per-test outcomes rely on the worker process integrity (exec-based in-process isolation cannot be made airtight).
+
+### Improved
+
+- Judge budget policy is explicit: `budget_usd` is a stop-on-observed guard announced at run start, with a plan-time refusal when the output-token lower bound alone exceeds it (input-token cost cannot be pre-bounded).
+- Statistical analysis reports units, excluded question ids and the conditional nature of the pass-rate interval, with a note that intervals are not significance tests; single-question, identical-value and disjoint-dataset edge cases are covered.
+- CSV export adds generation/evaluation/total latency columns and a separate `evaluations.csv` (evaluator type, status, scores, judgments, evaluation tokens and cost, code test totals, JSON error counts) with formula neutralization and empty cells for missing values.
+- The HTML dashboard shows separated latencies, a per-model evaluator matrix, judge cost coverage, reevaluation provenance and excluded questions; the comparison report gains paired differences and judge configuration sections; pairwise tallies show mixed verdicts and usage coverage.
+- A manual `docker-integration` GitHub Actions workflow runs the sandbox, adversarial and output-limit tests plus a leftover-container check on a dedicated runner; `pytest-cov` joins the dev dependencies (95% line coverage offline).
+
+### Compatibility
+
+- All commands, YAML configuration, datasets, CSV exports and report formats remain usable; every schema change is additive (`generation_ms`, `evaluation_ms`, `total_ms`, per-evaluator statistics fields, manifest `judge`/`source_run`/`reevaluation` blocks, payload `evaluatorsByModel`).
+- `latency_ms` changes meaning for new runs (generation only instead of generation plus evaluation); pre-0.3.1 results are displayed as recorded and flagged legacy. `answer_accuracy` no longer includes JSON Schema or code evaluations on mixed datasets (new dedicated fields carry them); the audit documents the previous definitions.
+- Reports from 0.1.0, 0.1.1, 0.2.0 and 0.3.0 load, render and export with fixtures covering each release.
+
+### Known Limitations
+
+- The code-evaluation worker's per-test outcomes can in principle be forged by a malicious submission with in-process introspection; the verdict channel and validation remain trusted (see the audit's threat model).
+- Per-test timeouts rely on `SIGALRM` inside Linux containers; other kernels fall back to the wall-clock timeout.
+- `budget_usd` cannot pre-bound input-token cost: judging stops once the observed spend reaches it, so an in-flight call may overshoot.
+- Estimated costs can differ from actual provider billing.
+
 ## [0.3.0] - 2026-11-14
 
 ### Added

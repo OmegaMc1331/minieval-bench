@@ -3,6 +3,7 @@ from __future__ import annotations
 import hashlib
 import json
 import statistics
+import threading
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -41,6 +42,14 @@ class Rubric(BaseModel):
 
     version: int = 1
     criteria: list[Criterion] = Field(min_length=1)
+
+    @model_validator(mode="after")
+    def check_unique_criteria(self) -> Rubric:
+        ids = [criterion.id for criterion in self.criteria]
+        duplicates = sorted({criterion_id for criterion_id in ids if ids.count(criterion_id) > 1})
+        if duplicates:
+            raise ValueError(f"rubric criteria must have unique ids: {', '.join(duplicates)}")
+        return self
 
     def fingerprint(self) -> str:
         canonical = self.model_dump(mode="json")
@@ -112,7 +121,7 @@ def build_judge_prompt(rubric: Rubric, prompt: str, reference: str | None, respo
 
 def parse_verdict(text: str, rubric: Rubric) -> tuple[dict[str, float], str | None]:
     parsed, error = extract_json(text)
-    if parsed is None:
+    if error is not None:
         raise JudgeError(f"judge returned invalid JSON: {error}")
     if not isinstance(parsed, dict) or not isinstance(parsed.get("scores"), dict):
         raise JudgeError("judge verdict must be an object with a 'scores' object")
@@ -162,6 +171,16 @@ class JudgeUsage:
     cost_usd: float | None
 
 
+@dataclass
+class JudgeCallResult:
+    scores: dict[str, float] | None
+    reason: str | None
+    usage: JudgeUsage | None
+    invalid_reason: str | None = None
+    network_error: str | None = None
+    attempts: int = 1
+
+
 def sum_usages(usages: list[JudgeUsage]) -> JudgeUsage:
     inputs = [usage.input_tokens for usage in usages if usage.input_tokens is not None]
     outputs = [usage.output_tokens for usage in usages if usage.output_tokens is not None]
@@ -184,10 +203,14 @@ class BaseJudge:
         self.config = config
         self.rubric = rubric
         self.seed = seed
+        self._lock = threading.Lock()
         self.calls_made = 0
         self.input_tokens = 0
         self.output_tokens = 0
         self.cost_usd = 0.0
+        self.total_responses = 0
+        self.total_network_errors = 0
+        self.total_retries = 0
 
     def plan_check(self, planned_calls: int) -> str | None:
         if self.config.max_calls is not None and planned_calls > self.config.max_calls:
@@ -195,12 +218,37 @@ class BaseJudge:
                 f"planned judge calls ({planned_calls}) exceed max_calls "
                 f"({self.config.max_calls})"
             )
+        if (
+            self.config.budget_usd is not None
+            and self.config.max_tokens is not None
+            and self.pricing_known()
+        ):
+            worst_output_cost = (
+                planned_calls
+                * self.config.max_tokens
+                * (self.config.output_cost_per_1m or 0)
+                / 1_000_000
+            )
+            if worst_output_cost > self.config.budget_usd:
+                return (
+                    f"planned judge calls ({planned_calls}) could exceed budget_usd on "
+                    f"output tokens alone (lower bound {worst_output_cost:.4f} USD); "
+                    "input-token cost cannot be pre-bounded"
+                )
         return None
 
-    def budget_exhausted(self) -> bool:
-        if self.config.max_calls is not None and self.calls_made >= self.config.max_calls:
+    def reserve_call(self) -> bool:
+        with self._lock:
+            if self.config.max_calls is not None and self.calls_made >= self.config.max_calls:
+                return False
+            self.calls_made += 1
             return True
-        return self.config.budget_usd is not None and self.cost_usd >= self.config.budget_usd
+
+    def budget_exhausted(self) -> bool:
+        with self._lock:
+            if self.config.max_calls is not None and self.calls_made >= self.config.max_calls:
+                return True
+            return self.config.budget_usd is not None and self.cost_usd >= self.config.budget_usd
 
     def pricing_known(self) -> bool:
         return (
@@ -208,11 +256,33 @@ class BaseJudge:
             and self.config.output_cost_per_1m is not None
         )
 
+    def record_call_outcome(self, result: JudgeCallResult) -> None:
+        with self._lock:
+            if result.attempts > 1:
+                self.total_retries += result.attempts - 1
+            if result.network_error is not None:
+                self.total_network_errors += 1
+            else:
+                self.total_responses += 1
+            usage = result.usage
+            if usage is None:
+                return
+            if usage.input_tokens is not None:
+                self.input_tokens += usage.input_tokens
+            if usage.output_tokens is not None:
+                self.output_tokens += usage.output_tokens
+            if usage.cost_usd is not None:
+                self.cost_usd += usage.cost_usd
+
     def evaluate(self, prompt: str, reference: str | None, response: str) -> EvaluationOutcome:
         judgments: list[dict[str, float]] = []
         overalls: list[float] = []
         usages: list[JudgeUsage] = []
         failures: list[str] = []
+        responses = 0
+        invalid_verdicts = 0
+        network_errors = 0
+        retries = 0
         budget_stopped = False
         last_reason = None
 
@@ -220,18 +290,30 @@ class BaseJudge:
             if self.budget_exhausted():
                 budget_stopped = True
                 break
-            try:
-                scores, reason, usage = self._judge_once(
-                    prompt, reference, response, repeat_index
-                )
-            except JudgeError as exc:
-                failures.append(str(exc))
+            if not self.reserve_call():
+                budget_stopped = True
+                break
+            result = self._judge_once(prompt, reference, response, repeat_index)
+            self.record_call_outcome(result)
+            if result.attempts > 1:
+                retries += result.attempts - 1
+            if result.network_error is not None:
+                network_errors += 1
+                failures.append(result.network_error)
                 continue
-            judgments.append(scores)
-            overalls.append(weighted_overall(scores, self.rubric))
-            usages.append(usage)
-            last_reason = reason
+            responses += 1
+            if result.usage is not None:
+                usages.append(result.usage)
+            if result.scores is None:
+                invalid_verdicts += 1
+                failures.append(result.invalid_reason or "invalid verdict")
+                continue
+            judgments.append(result.scores)
+            overalls.append(weighted_overall(result.scores, self.rubric))
+            last_reason = result.reason
 
+        total_usage = sum_usages(usages)
+        known_cost_calls = sum(1 for usage in usages if usage.cost_usd is not None)
         common_details = {
             "judge_model": self.judge_model_name(),
             "rubric_fingerprint": self.rubric.fingerprint(),
@@ -239,6 +321,20 @@ class BaseJudge:
             "judgments": len(judgments),
             "judge_failures": len(failures),
             "judge_failure_examples": failures[:3],
+            "usage": {
+                "calls": responses + network_errors,
+                "responses": responses,
+                "valid_verdicts": len(judgments),
+                "invalid_verdicts": invalid_verdicts,
+                "network_errors": network_errors,
+                "retries": retries,
+                "cost_known_calls": known_cost_calls,
+            },
+        }
+        outcome_usage = {
+            "input_tokens": total_usage.input_tokens,
+            "output_tokens": total_usage.output_tokens,
+            "cost_usd": total_usage.cost_usd,
         }
 
         if not judgments:
@@ -248,12 +344,14 @@ class BaseJudge:
                     status="unavailable",
                     error_message="judge budget exhausted before any valid judgment",
                     details=common_details,
+                    **outcome_usage,
                 )
             return EvaluationOutcome(
                 evaluator="judge",
                 status="failed",
                 error_message="; ".join(failures) or "no valid judgment",
                 details=common_details,
+                **outcome_usage,
             )
 
         criteria_details = {}
@@ -272,18 +370,13 @@ class BaseJudge:
         }
         if budget_stopped:
             details["budget_exhausted"] = True
-        if failures:
-            details["judge_failure_examples"] = failures[:3]
-        total_usage = sum_usages(usages)
         return EvaluationOutcome(
             evaluator="judge",
             status="completed",
             passed=None,
             score=statistics.mean(overalls),
             details=details,
-            input_tokens=total_usage.input_tokens,
-            output_tokens=total_usage.output_tokens,
-            cost_usd=total_usage.cost_usd,
+            **outcome_usage,
         )
 
     def judge_model_name(self) -> str:
@@ -291,16 +384,8 @@ class BaseJudge:
 
     def _judge_once(
         self, prompt: str, reference: str | None, response: str, repeat_index: int
-    ) -> tuple[dict[str, float], str | None, JudgeUsage]:
+    ) -> JudgeCallResult:
         raise NotImplementedError
-
-    def record_usage(self, usage: JudgeUsage) -> None:
-        if usage.input_tokens is not None:
-            self.input_tokens += usage.input_tokens
-        if usage.output_tokens is not None:
-            self.output_tokens += usage.output_tokens
-        if usage.cost_usd is not None:
-            self.cost_usd += usage.cost_usd
 
 
 class Judge(BaseJudge):
@@ -326,18 +411,30 @@ class Judge(BaseJudge):
 
     def _judge_once(
         self, prompt: str, reference: str | None, response: str, repeat_index: int
-    ) -> tuple[dict[str, float], str | None, JudgeUsage]:
-        self.calls_made += 1
+    ) -> JudgeCallResult:
         judge_prompt = build_judge_prompt(self.rubric, prompt, reference, response)
         try:
             result = self.provider.complete(
                 judge_prompt, None, derive_seed(self.seed, repeat_index)
             )
         except Exception as exc:
-            raise JudgeError(f"judge call failed: {safe_error_message(exc)}") from exc
+            return JudgeCallResult(
+                scores=None,
+                reason=None,
+                usage=None,
+                network_error=f"judge call failed: {safe_error_message(exc)}",
+            )
         usage = JudgeUsage(result.input_tokens, result.output_tokens, result.cost_usd)
-        self.record_usage(usage)
-        return (*parse_verdict(result.text, self.rubric), usage)
+        try:
+            scores, reason = parse_verdict(result.text, self.rubric)
+        except JudgeError as exc:
+            return JudgeCallResult(
+                scores=None, reason=None, usage=usage, invalid_reason=str(exc),
+                attempts=result.attempts,
+            )
+        return JudgeCallResult(
+            scores=scores, reason=reason, usage=usage, attempts=result.attempts
+        )
 
 
 class MockJudge(BaseJudge):
@@ -346,8 +443,7 @@ class MockJudge(BaseJudge):
 
     def _judge_once(
         self, prompt: str, reference: str | None, response: str, repeat_index: int
-    ) -> tuple[dict[str, float], str | None, JudgeUsage]:
-        self.calls_made += 1
+    ) -> JudgeCallResult:
         digest = hashlib.sha256(
             f"{self.seed}:{repeat_index}:{prompt}:{response}".encode()
         ).hexdigest()
@@ -368,9 +464,11 @@ class MockJudge(BaseJudge):
             input_tokens,
             output_tokens,
         )
-        usage = JudgeUsage(input_tokens, output_tokens, cost)
-        self.record_usage(usage)
-        return scores, "deterministic mock judgment", usage
+        return JudgeCallResult(
+            scores=scores,
+            reason="deterministic mock judgment",
+            usage=JudgeUsage(input_tokens, output_tokens, cost),
+        )
 
 
 class CalibrationItem(BaseModel):

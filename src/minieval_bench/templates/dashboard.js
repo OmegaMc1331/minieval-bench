@@ -57,10 +57,22 @@ const trials = (payload.trials || []).map((row, index) => ({
   outputTokens: row[8],
   costUsd: row[9],
   errorType: row[10] === null ? null : payload.errorTypes[row[10]],
+  generationMs: row.length > 11 ? row[11] : null,
+  evaluationMs: row.length > 12 ? row[12] : null,
+  totalMs: row.length > 13 ? row[13] : null,
   response: payload.responses[index],
   errorMessage: payload.errorMessages[index],
   evaluation: evaluations[index] || null,
 }));
+
+const legacyLatencyRun = trials.length > 0
+  && trials.every((trial) => trial.generationMs === null || trial.generationMs === undefined);
+
+function generationLatency(trial) {
+  return trial.generationMs === null || trial.generationMs === undefined
+    ? trial.latencyMs
+    : trial.generationMs;
+}
 
 const hasEvaluator = (name) => evaluations.some((item) => item && item.evaluator === name);
 const judgeTrials = trials.filter(
@@ -255,7 +267,9 @@ function renderLatency(section) {
     checkboxArea,
     h("p", {
       class: "section-note",
-      text: `Histograms use ${LATENCY_BINS} equal-width bins over the successful requests of each model. Latency measures the provider call only; queue delay is reported separately.`,
+      text: legacyLatencyRun
+        ? `Histograms use ${LATENCY_BINS} equal-width bins over the successful requests of each model. This run predates 0.3.1: latency mixes generation and evaluation; queue delay is reported separately.`
+        : `Histograms use ${LATENCY_BINS} equal-width bins over the successful requests of each model. Latency measures the model call (generation) only; evaluation and queue delays are reported separately.`,
     }),
     charts,
   );
@@ -265,7 +279,7 @@ function renderLatency(section) {
 function latencyBlock(item) {
   const values = trials
     .filter((trial) => trial.model === item.model && trial.ok)
-    .map((trial) => trial.latencyMs)
+    .map((trial) => generationLatency(trial))
     .filter((value) => value !== null);
   const block = h("div", { class: "multi-chart" },
     h("h4", { text: item.model }),
@@ -296,6 +310,12 @@ function latencyBlock(item) {
       h("span", { text: "p95 " + fmtMs(item.p95_latency_ms) + " ms" }),
       h("span", { text: histogram.max.toFixed(1) + " ms" }),
     ),
+    h("p", {
+      class: "sub",
+      text: legacyLatencyRun
+        ? "Legacy run: generation and evaluation latencies are not separated."
+        : `evaluation median ${fmtMs(item.median_evaluation_ms)} ms · total median ${fmtMs(item.median_total_ms)} ms`,
+    }),
     h("details", { class: "data-details" },
       h("summary", { text: "View bin counts" }),
       h("div", { class: "table-scroll" },
@@ -469,7 +489,9 @@ const TRIAL_COLUMNS = [
   ["repeat", "Rep", true],
   ["status", "Status", false],
   ["evaluation", "Eval", false],
-  ["latencyMs", "Latency (ms)", true],
+  ["latencyMs", "Gen (ms)", true],
+  ["evaluationMs", "Eval (ms)", true],
+  ["totalMs", "Total (ms)", true],
   ["queueMs", "Queue (ms)", true],
   ["inputTokens", "In tok", true],
   ["outputTokens", "Out tok", true],
@@ -662,7 +684,9 @@ function renderTrials(section) {
       h("td", { class: "num", text: String(trial.repeat) }),
       h("td", null, h("span", { class: trial.ok ? "status-ok" : "status-failed", text: trial.ok ? "ok" : "failed" })),
       h("td", null, evaluationCell(trial)),
-      h("td", { class: "num", text: fmtMs(trial.latencyMs) }),
+      h("td", { class: "num", text: fmtMs(generationLatency(trial)) }),
+      h("td", { class: "num", text: fmtMs(trial.evaluationMs) }),
+      h("td", { class: "num", text: fmtMs(trial.totalMs) }),
       h("td", { class: "num", text: fmtMs(trial.queueMs) }),
       h("td", { class: "num", text: fmtInt(trial.inputTokens) }),
       h("td", { class: "num", text: fmtInt(trial.outputTokens) }),
@@ -692,7 +716,14 @@ function renderTrials(section) {
       ),
       factRow("Status", trial.ok ? "ok" : "failed"),
       evaluationNodes(trial),
-      factRow("Latency", fmtMs(trial.latencyMs) + " ms"),
+      factRow(
+        legacyLatencyRun ? "Latency (legacy, includes evaluation)" : "Generation latency",
+        fmtMs(generationLatency(trial)) + " ms",
+      ),
+      legacyLatencyRun
+        ? null
+        : factRow("Evaluation latency", fmtMs(trial.evaluationMs) + " ms"),
+      legacyLatencyRun ? null : factRow("Total latency", fmtMs(trial.totalMs) + " ms"),
       factRow("Queue delay", fmtMs(trial.queueMs) + " ms"),
       factRow("Tokens", `in ${fmtInt(trial.inputTokens)} / out ${fmtInt(trial.outputTokens)}`),
       factRow("Estimated cost", fmtCost(trial.costUsd) + " USD"),
@@ -951,6 +982,40 @@ function renderMetadata(section) {
         : "This export does not contain a dataset snapshot: prompts and references are not shown in the trial explorer.",
     }),
   );
+  if (manifest.source_run || manifest.reevaluation) {
+    section.append(h("h3", { text: "Reevaluation provenance" }));
+    const source = manifest.source_run || {};
+    const reevaluation = manifest.reevaluation || {};
+    const matching = reevaluation.matching || {};
+    section.append(
+      h("dl", { class: "facts" },
+        h("dt", { text: "Source run" }), h("dd", { text: source.path || "n/a" }),
+        h("dt", { text: "Source benchmark" }), h("dd", { text: source.benchmark || "n/a" }),
+        h("dt", { text: "Source generation (UTC)" }), h("dd", { text: source.created_at_utc || "n/a" }),
+        h("dt", { text: "Source MiniEval version" }), h("dd", { text: source.minieval_version || "n/a" }),
+        h("dt", { text: "Source dataset sha256" }), h("dd", { text: source.dataset_sha256 || "n/a" }),
+        h("dt", { text: "Reevaluated with" }), h("dd", { text: reevaluation.minieval_version || "n/a" }),
+        h("dt", { text: "Reevaluation dataset sha256" }), h("dd", { text: reevaluation.dataset_sha256 || "n/a" }),
+        h("dt", { text: "Judge rubric" }),
+        h("dd", {
+          text: reevaluation.judge && reevaluation.judge.rubric_fingerprint
+            ? reevaluation.judge.rubric_fingerprint
+            : "n/a",
+        }),
+        h("dt", { text: "Question matching" }),
+        h("dd", {
+          text: `${matching.basis || "n/a"}: ${fmtInt(matching.verified)} verified, ` +
+            `${fmtInt(matching.unverified)} unverified, ` +
+            `${(matching.conflicts || []).length} conflict(s)`,
+        }),
+      ),
+      h("p", {
+        class: "section-note",
+        text: "Responses and their latencies come from the source run; evaluations were recomputed " +
+          "by the reevaluation configuration above. Original results were not modified.",
+      }),
+    );
+  }
 }
 
 function fmtScore(value) {
@@ -999,6 +1064,42 @@ function renderEvaluationOverview(section) {
         "never merged into a single ranking.",
     }),
   );
+  const byModel = payload.evaluatorsByModel;
+  if (byModel && byModel.length > 1) {
+    section.append(
+      h("h4", { text: "Per model and evaluator" }),
+      h("div", { class: "table-scroll" },
+        h("table", null,
+          h("thead", null,
+            h("tr", null,
+              ["Model", "Evaluator", "Trials", "Binary", "Passed", "Binary pass rate",
+                "Mean score"].map((label, index) =>
+                h("th", { class: index > 1 ? "num" : null, text: label }),
+              ),
+            ),
+          ),
+          h("tbody", null,
+            byModel.map((item) =>
+              h("tr", null,
+                h("td", { class: "mono", text: item.model }),
+                h("td", { class: "mono", text: item.evaluator }),
+                h("td", { class: "num", text: fmtInt(item.trials) }),
+                h("td", { class: "num", text: fmtInt(item.binary) }),
+                h("td", { class: "num", text: fmtInt(item.passed) }),
+                h("td", { class: "num", text: fmtRate(item.binary_pass_rate) }),
+                h("td", { class: "num", text: item.mean_score === null ? "n/a" : item.mean_score.toFixed(3) }),
+              ),
+            ),
+          ),
+        ),
+      ),
+      h("p", {
+        class: "section-note",
+        text: "Mixed datasets keep one population per evaluator: pass rates above use each " +
+          "evaluator's own binary trials as denominator.",
+      }),
+    );
+  }
 }
 
 function judgeModelBlocks() {
@@ -1020,10 +1121,13 @@ function judgeModelBlocks() {
         criteria[criterionId].values.push(values.mean);
       }
     }
-    const cost = trialsForModel.reduce(
-      (total, trial) => total + (trial.evaluation.cost_usd || 0), 0
-    );
-    return { model, trialsForModel, completed, scores, criteria, cost };
+    const knownCosts = trialsForModel
+      .map((trial) => trial.evaluation.cost_usd)
+      .filter((value) => value !== null && value !== undefined);
+    const cost = knownCosts.length > 0
+      ? knownCosts.reduce((total, value) => total + value, 0)
+      : null;
+    return { model, trialsForModel, completed, scores, criteria, cost, knownCosts };
   });
 }
 
@@ -1045,12 +1149,17 @@ function renderJudgeScores(section) {
 }
 
 function judgeBlock(block) {
+  const costNote = block.cost === null
+    ? ""
+    : ` — judge cost ${block.cost.toFixed(6)} USD` +
+      (block.knownCosts.length < block.trialsForModel.length
+        ? ` (partial: known for ${block.knownCosts.length}/${block.trialsForModel.length} evaluations)`
+        : "");
   const blockNode = h("div", { class: "multi-chart" },
     h("h4", { text: block.model }),
     h("p", {
       class: "sub",
-      text: `${block.completed.length} judged response(s)` +
-        (block.cost ? ` — judge cost ${block.cost.toFixed(6)} USD` : ""),
+      text: `${block.completed.length} judged response(s)` + costNote,
     }),
   );
   if (block.scores.length === 0) {
@@ -1278,6 +1387,11 @@ function renderStatisticalAnalysis(section) {
     return;
   }
   const resampling = data[0].resampling || {};
+  const metricLabels = {
+    pass_rate: "pass rate (conditional on evaluation)",
+    latency_ms: "generation latency (ms)",
+    judge_score: "judge score",
+  };
   const metricRows = [];
   for (const entry of data) {
     for (const metricKey of ["pass_rate", "latency_ms", "judge_score"]) {
@@ -1291,7 +1405,8 @@ function renderStatisticalAnalysis(section) {
       h("table", null,
         h("thead", null,
           h("tr", null,
-            ["Model", "Metric", "Mean", "Median", "Std", "Min", "Max", "95% CI", "Units"].map(
+            ["Model", "Metric", "Mean", "Median", "Std", "Min", "Max", "95% CI", "Units",
+              "Excluded questions"].map(
               (label, index) => h("th", { class: index > 1 ? "num" : null, text: label }),
             ),
           ),
@@ -1305,9 +1420,14 @@ function renderStatisticalAnalysis(section) {
             const ci = metric.ci95.low === null || metric.ci95.low === undefined
               ? "n/a"
               : `[${format(metric.ci95.low)}, ${format(metric.ci95.high)}]`;
+            const excluded = metric.excluded_questions
+              ? (metric.excluded_questions.length === 0
+                ? "0"
+                : `${metric.excluded_questions.length}: ${metric.excluded_questions.join(", ")}`)
+              : "n/a";
             return h("tr", null,
               h("td", { class: "mono", text: model }),
-              h("td", { text: metricKey }),
+              h("td", { text: metricLabels[metricKey] || metricKey }),
               h("td", { class: "num", text: format(metric.summary.mean) }),
               h("td", { class: "num", text: format(metric.summary.median) }),
               h("td", { class: "num", text: format(metric.summary.std) }),
@@ -1315,6 +1435,7 @@ function renderStatisticalAnalysis(section) {
               h("td", { class: "num", text: format(metric.summary.max) }),
               h("td", { class: "num", text: ci }),
               h("td", { class: "num", text: fmtInt(metric.summary.count) }),
+              h("td", { class: "num", title: excluded, text: excluded }),
             );
           }),
         ),

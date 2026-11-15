@@ -6,6 +6,7 @@ from minieval_bench.evaluation.pairwise import (
     MockPairwiseJudge,
     PairwiseError,
     PairwiseJudgment,
+    build_pairwise_judge,
     build_pairwise_prompt,
     collect_pairs,
     judge_pair,
@@ -14,6 +15,7 @@ from minieval_bench.evaluation.pairwise import (
     parse_pairwise_verdict,
     run_pairwise,
 )
+from minieval_bench.models import JudgeConfig
 from test_stats import make_trial
 
 
@@ -68,7 +70,7 @@ def test_pairwise_prompt_hides_models_and_frames_data():
 
 
 def test_mock_pairwise_judge_is_deterministic():
-    judge = MockPairwiseJudge(seed=5)
+    judge = MockPairwiseJudge(JudgeConfig(provider="mock"), seed=5)
 
     first = judge.judge("q", "response-a", "response-b", 1)
     second = judge.judge("q", "response-a", "response-b", 1)
@@ -126,7 +128,19 @@ def test_pairwise_outcome_resolves_simple_preferences():
     judgments = [verdict("model-a"), verdict("model-a")]
 
     assert pairwise_outcome(judgments, "model-a", "model-b") == "win:model-a"
-    assert pairwise_outcome([verdict("tie")], "model-a", "model-b") == "tie"
+    assert pairwise_outcome([verdict("tie"), verdict("tie")], "model-a", "model-b") == "tie"
+
+
+def test_win_plus_tie_is_a_mixed_verdict_not_a_win():
+    win_then_tie = [verdict("model-a"), verdict("tie")]
+    tie_then_win = [verdict("tie"), verdict("model-b")]
+
+    assert pairwise_outcome(win_then_tie, "model-a", "model-b") == "mixed_verdict"
+    assert pairwise_outcome(tie_then_win, "model-a", "model-b") == "mixed_verdict"
+
+
+def test_single_judgment_is_incomplete():
+    assert pairwise_outcome([verdict("model-a")], "model-a", "model-b") == "incomplete"
 
 
 def test_run_pairwise_marks_missing_prompts_unavailable():
@@ -142,24 +156,80 @@ def test_run_pairwise_marks_missing_prompts_unavailable():
 def test_pairwise_summary_counts_categories():
     from minieval_bench.evaluation.pairwise import PairwiseRecord
 
-    def record(outcome):
+    def record(outcome, judgments=None):
         return PairwiseRecord(
             entry_id="e", repeat=0, model_a="a", model_b="b",
-            response_a="x", response_b="y", judgments=[], outcome=outcome,
+            response_a="x", response_b="y", judgments=judgments or [], outcome=outcome,
         )
 
     summary = pairwise_summary(
         [record("win:a"), record("win:a"), record("win:b"), record("tie"),
-         record("disagreement"), record("unavailable")],
+         record("mixed_verdict"), record("disagreement"), record("judge_error"),
+         record("unavailable")],
         "a",
         "b",
     )
 
-    assert summary == {
-        "comparisons": 6,
-        "wins:a": 2,
-        "wins:b": 1,
-        "ties": 1,
-        "disagreements": 1,
-        "unavailable": 1,
-    }
+    assert summary["comparisons"] == 8
+    assert summary["wins:a"] == 2
+    assert summary["wins:b"] == 1
+    assert summary["ties"] == 1
+    assert summary["mixed_verdicts"] == 1
+    assert summary["disagreements"] == 1
+    assert summary["judge_errors"] == 1
+    assert summary["unavailable"] == 1
+    assert summary["judge_calls"] == 0
+    assert summary["cost_usd"] is None
+
+
+def test_pairwise_summary_sums_known_usage_with_coverage():
+    from minieval_bench.evaluation.pairwise import PairwiseRecord
+
+    judgments = [
+        PairwiseJudgment(order="first", preferred="a", input_tokens=10, output_tokens=5,
+                         cost_usd=0.001),
+        PairwiseJudgment(order="second", preferred="tie", input_tokens=10, output_tokens=5,
+                         cost_usd=None),
+    ]
+    record = PairwiseRecord(
+        entry_id="e", repeat=0, model_a="a", model_b="b",
+        response_a="x", response_b="y", judgments=judgments, outcome="mixed_verdict",
+    )
+
+    summary = pairwise_summary([record], "a", "b")
+
+    assert summary["judge_calls"] == 2
+    assert summary["input_tokens"] == 20
+    assert summary["output_tokens"] == 10
+    assert summary["cost_usd"] == pytest.approx(0.001)
+    assert summary["usage_known_judgments"] == 2
+
+
+def test_pairwise_judge_masks_provider_errors(monkeypatch):
+    import sys
+
+    class FakeLitellm:
+        @staticmethod
+        def completion(model, messages, **kwargs):
+            raise RuntimeError("api_key=sk-SECRETSECRET123 exploded")
+
+        @staticmethod
+        def completion_cost(response):
+            raise ValueError("no pricing")
+
+    monkeypatch.setitem(sys.modules, "litellm", FakeLitellm)
+    judge = build_pairwise_judge(
+        JudgeConfig(provider="litellm", model="openai/judge-x"), seed=1
+    )
+
+    with pytest.raises(PairwiseError, match="pairwise judge call failed"):
+        judge.judge("q", "a", "b", 1)
+
+
+def test_pairwise_mock_judge_respects_max_calls():
+    judge = MockPairwiseJudge(JudgeConfig(provider="mock", max_calls=2), seed=1)
+
+    judge.judge("q", "a", "b", 1)
+    judge.judge("q", "a", "b", 2)
+    with pytest.raises(PairwiseError, match="budget exhausted"):
+        judge.judge("q", "a", "b", 3)

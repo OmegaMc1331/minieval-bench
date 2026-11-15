@@ -267,3 +267,116 @@ def test_comparison_accepts_v010_results(tmp_path):
     assert len(payload["runs"]) == 2
     accuracy = indicator(payload, "old-mock", "answer_accuracy")
     assert accuracy["values"][0] == pytest.approx(2 / 3)
+
+
+def make_trial(model: str, entry_id: str, repeat: int, passed: bool) -> dict:
+    return {
+        "model": model,
+        "entry_id": entry_id,
+        "repeat": repeat,
+        "ok": True,
+        "response": "resp",
+        "latency_ms": 10.0,
+        "input_tokens": 5,
+        "output_tokens": 5,
+        "cost_usd": None,
+        "error_type": None,
+        "error_message": None,
+        "passed": passed,
+    }
+
+
+def write_run_with_trials(directory, manifest, stats, trials):
+    from minieval_bench.models import TrialResult
+
+    directory.mkdir(parents=True, exist_ok=True)
+    write_reports(
+        directory, manifest, stats, [TrialResult.model_validate(t) for t in trials], html=False
+    )
+    return directory
+
+
+RUBRIC_A = {
+    "provider": "mock",
+    "model": None,
+    "repeats": 1,
+    "rubric_fingerprint": "a" * 64,
+    "rubric_version": 1,
+    "criteria": [{"id": "correctness", "scale_min": 1, "scale_max": 5, "weight": 1.0}],
+}
+RUBRIC_B = {**RUBRIC_A, "rubric_fingerprint": "b" * 64}
+
+
+def test_compare_warns_on_different_rubrics(tmp_path):
+    first = write_run(tmp_path / "run-a", make_manifest(judge=RUBRIC_A), [make_stats()])
+    second = write_run(tmp_path / "run-b", make_manifest(judge=RUBRIC_B), [make_stats()])
+
+    payload = build_comparison_payload([first, second])
+
+    assert any("Judge rubrics differ" in warning for warning in payload["warnings"])
+
+
+def test_compare_warns_when_judge_is_unknown_in_one_run(tmp_path):
+    first = write_run(tmp_path / "run-a", make_manifest(judge=RUBRIC_A), [make_stats()])
+    legacy = write_run(tmp_path / "run-b", make_manifest(), [make_stats()])
+
+    payload = build_comparison_payload([first, legacy])
+
+    assert any("rubric is unknown" in warning for warning in payload["warnings"])
+
+
+def test_compare_warns_on_latency_semantics_change(tmp_path):
+    first = write_run(
+        tmp_path / "run-a", make_manifest(minieval_version="0.3.0"), [make_stats()]
+    )
+    second = write_run(
+        tmp_path / "run-b", make_manifest(minieval_version="0.3.1"), [make_stats()]
+    )
+
+    payload = build_comparison_payload([first, second])
+
+    assert any("Latency semantics differ" in warning for warning in payload["warnings"])
+
+
+def test_compare_computes_paired_statistics_for_two_compatible_runs(tmp_path):
+    trials_a = [
+        make_trial("model-a", "q1", 0, True),
+        make_trial("model-a", "q2", 0, False),
+        make_trial("model-a", "q1", 1, True),
+    ]
+    trials_b = [
+        make_trial("model-a", "q1", 0, False),
+        make_trial("model-a", "q2", 0, True),
+        make_trial("model-a", "q1", 1, True),
+    ]
+    first = write_run_with_trials(
+        tmp_path / "run-a", make_manifest(), [make_stats()], trials_a
+    )
+    second = write_run_with_trials(
+        tmp_path / "run-b", make_manifest(), [make_stats()], trials_b
+    )
+
+    payload = build_comparison_payload([first, second])
+
+    assert len(payload["paired"]) == 1
+    entry = payload["paired"][0]
+    assert entry["model"] == "model-a"
+    assert entry["units"] == 2
+    assert entry["differences_summary"]["count"] == 2
+    assert entry["ci95"]["method"] == "percentile bootstrap over question means"
+
+
+def test_compare_skips_paired_statistics_when_datasets_differ(tmp_path):
+    first = write_run_with_trials(
+        tmp_path / "run-a", make_manifest(), [make_stats()], [make_trial("model-a", "q1", 0, True)]
+    )
+    second = write_run_with_trials(
+        tmp_path / "run-b",
+        make_manifest(dataset_sha256="c" * 64),
+        [make_stats()],
+        [make_trial("model-a", "q1", 0, False)],
+    )
+
+    payload = build_comparison_payload([first, second])
+
+    assert payload["paired"] == []

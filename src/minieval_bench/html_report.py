@@ -6,6 +6,7 @@ from pathlib import Path
 
 from minieval_bench.evaluation.statistics import (
     analyze_model_statistics,
+    per_model_evaluator_summaries,
     summarize_evaluations,
 )
 from minieval_bench.models import (
@@ -37,11 +38,12 @@ def render_standalone(payload: dict, template_name: str, script_name: str) -> st
 
 def build_analysis(
     manifest: Manifest, trials: list[TrialResult]
-) -> tuple[list[dict], list[dict]]:
+) -> tuple[list[dict], list[dict], list[dict]]:
     statistics_config = StatisticsConfig.model_validate(manifest.statistics or {})
     statistics = analyze_model_statistics(trials, statistics_config, manifest.seed)
     evaluator_summaries = summarize_evaluations(trials)
-    return statistics, evaluator_summaries
+    evaluator_by_model = per_model_evaluator_summaries(trials)
+    return statistics, evaluator_summaries, evaluator_by_model
 
 
 def write_html_report(
@@ -51,9 +53,9 @@ def write_html_report(
     trials: list[TrialResult],
     dataset: list[DatasetEntry] | None = None,
 ) -> None:
-    statistics, evaluator_summaries = build_analysis(manifest, trials)
+    statistics, evaluator_summaries, evaluator_by_model = build_analysis(manifest, trials)
     payload = build_run_payload(
-        manifest, stats, trials, dataset, statistics, evaluator_summaries
+        manifest, stats, trials, dataset, statistics, evaluator_summaries, evaluator_by_model
     )
     output_path.parent.mkdir(parents=True, exist_ok=True)
     standalone = render_standalone(payload, "report.html", "dashboard.js")
@@ -67,6 +69,7 @@ def build_run_payload(
     dataset: list[DatasetEntry] | None,
     statistics: list[dict] | None = None,
     evaluator_summaries: list[dict] | None = None,
+    evaluator_by_model: list[dict] | None = None,
 ) -> dict:
     models = sorted({trial.model for trial in trials} | {item.model for item in stats})
     entry_ids = sorted({trial.entry_id for trial in trials})
@@ -88,6 +91,9 @@ def build_run_payload(
             trial.output_tokens,
             None if trial.cost_usd is None else round(trial.cost_usd, 10),
             None if trial.error_type is None else error_index[trial.error_type],
+            None if trial.generation_ms is None else round(trial.generation_ms, 3),
+            None if trial.evaluation_ms is None else round(trial.evaluation_ms, 3),
+            None if trial.total_ms is None else round(trial.total_ms, 3),
         ]
         for trial in trials
     ]
@@ -111,4 +117,5 @@ def build_run_payload(
         ),
         "statistics": statistics or None,
         "evaluatorSummaries": evaluator_summaries or None,
+        "evaluatorsByModel": evaluator_by_model or None,
     }

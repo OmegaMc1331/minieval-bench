@@ -29,7 +29,9 @@ const payload = JSON.parse(document.getElementById("report-data").textContent);
 const OUTCOME_LABELS = {
   "win": "win",
   "tie": "tie",
+  "mixed_verdict": "mixed verdict (a win and a tie: not a confirmed win)",
   "disagreement": "disagreement (positions swapped returned opposite verdicts)",
+  "incomplete": "incomplete (fewer than two judgments)",
   "unavailable": "unavailable",
   "judge_error": "judge error",
 };
@@ -41,13 +43,48 @@ function outcomeLabel(outcome) {
   return OUTCOME_LABELS[outcome] || outcome;
 }
 
+const SUMMARY_COUNT_KEYS = [
+  "comparisons",
+  "wins", "ties", "mixed_verdicts", "disagreements", "judge_errors", "incomplete",
+  "unavailable", "judge_calls",
+];
+
+function summaryCountEntries(summary) {
+  const byPrefix = new Map();
+  for (const [key, value] of Object.entries(summary)) {
+    if (key.startsWith("wins:")) byPrefix.set(key, value);
+  }
+  const rows = [];
+  for (const key of SUMMARY_COUNT_KEYS) {
+    if (key === "wins") {
+      for (const [prefKey, value] of byPrefix) rows.push([prefKey, value]);
+    } else if (summary[key] !== undefined) {
+      rows.push([key, summary[key]]);
+    }
+  }
+  for (const [key, value] of Object.entries(summary)) {
+    if (!rows.some(([rowKey]) => rowKey === key) && typeof value === "number") {
+      rows.push([key, value]);
+    }
+  }
+  return rows;
+}
+
 function renderSummary(section) {
+  const summary = payload.summary;
+  const usage = [
+    ["input_tokens", summary.input_tokens],
+    ["output_tokens", summary.output_tokens],
+    ["cost_usd", summary.cost_usd],
+    ["usage_known_judgments", summary.usage_known_judgments],
+  ];
   section.append(
     h("p", {
       class: "section-note",
       text: `Blind comparison of ${payload.modelA} and ${payload.modelB}. Model names were hidden ` +
         "from the judge; each pair was judged twice with positions swapped, and verdicts were " +
-        "mapped back to the original responses. Contradictory verdicts are kept as disagreements.",
+        "mapped back to the original responses. Only concordant verdicts count as wins; a win " +
+        "combined with a tie is reported as a mixed verdict.",
     }),
     h("div", { class: "table-scroll" },
       h("table", null,
@@ -58,7 +95,7 @@ function renderSummary(section) {
           ),
         ),
         h("tbody", null,
-          Object.entries(payload.summary).map(([measure, count]) =>
+          summaryCountEntries(summary).map(([measure, count]) =>
             h("tr", null,
               h("td", { class: "mono", text: measure }),
               h("td", { class: "num", text: String(count) }),
@@ -69,9 +106,35 @@ function renderSummary(section) {
     ),
     h("p", {
       class: "section-note",
-      text: "Counts of wins, ties, disagreements and unavailable judgments. No global ranking or "
-        + "Elo score is computed: these tallies do not establish statistical superiority.",
+      text: "Counts of wins, ties, mixed verdicts, disagreements and unavailable judgments. " +
+        "Token and cost totals cover only the judgments that reported them " +
+        `(${summary.usage_known_judgments} of ${summary.judge_calls} judgment(s)); a partial ` +
+        "total is not the full cost. No global ranking or Elo score is computed: these tallies " +
+        "do not establish statistical superiority.",
     }),
+    h("div", { class: "table-scroll" },
+      h("table", null,
+        h("thead", null,
+          h("tr", null,
+            h("th", { text: "Usage" }),
+            h("th", { class: "num", text: "Value" }),
+          ),
+        ),
+        h("tbody", null,
+          usage.map(([measure, value]) =>
+            h("tr", null,
+              h("td", { class: "mono", text: measure }),
+              h("td", {
+                class: "num",
+                text: value === null || value === undefined
+                  ? "n/a"
+                  : measure === "cost_usd" ? value.toFixed(6) : String(value),
+              }),
+            ),
+          ),
+        ),
+      ),
+    ),
   );
 }
 
