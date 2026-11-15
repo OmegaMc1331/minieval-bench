@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 import statistics
+from datetime import UTC, datetime
 from pathlib import Path
 from typing import Annotated
 
@@ -32,10 +33,13 @@ from minieval_bench.html_report import render_standalone, write_html_report
 from minieval_bench.models import BenchmarkConfig, DatasetEntry
 from minieval_bench.reports import (
     build_manifest,
+    dataset_fingerprint,
     errors_table,
     evaluation_breakdown_table,
+    judge_manifest_block,
     load_dataset_snapshot,
     load_results,
+    match_dataset_entries,
     stats_table,
     write_reports,
 )
@@ -336,6 +340,26 @@ def evaluate(
             f"{', '.join(missing[:5])}{'…' if len(missing) > 5 else ''}[/yellow]"
         )
 
+    snapshot = load_dataset_snapshot(input_dir)
+    new_dataset_sha = dataset_fingerprint(Path(benchmark_config.dataset))
+    matching = match_dataset_entries(
+        manifest, snapshot, manifest.dataset_sha256 == new_dataset_sha, entries
+    )
+    conflicting_ids = set(matching["conflicts"])
+    if conflicting_ids:
+        console.print(
+            f"[red]{len(conflicting_ids)} entry id(s) changed since the source run and are kept"
+            f" unchanged (their stored answers may not match the new questions): "
+            f"{', '.join(sorted(conflicting_ids)[:5])}"
+            f"{'…' if len(conflicting_ids) > 5 else ''}[/red]"
+        )
+    if matching["unverified"]:
+        console.print(
+            f"[yellow]{len(matching['unverified'])} entry id(s) cannot be verified against the"
+            " source run (matching by id only); their stored answers may not match the"
+            " current questions.[/yellow]"
+        )
+
     try:
         judge = build_judge_from_config(benchmark_config, benchmark_config.defaults.seed)
     except JudgeError as exc:
@@ -347,6 +371,7 @@ def evaluate(
             for trial in trials
             if trial.ok and entries_by_id.get(trial.entry_id) is not None
             and entries_by_id[trial.entry_id].metric == "judge"
+            and trial.entry_id not in conflicting_ids
         ) * benchmark_config.evaluators.judge.repeats
         refusal = judge.plan_check(planned)
         if refusal:
@@ -355,21 +380,67 @@ def evaluate(
         console.print(f"Judge enabled: {planned} call(s) planned for re-evaluation")
     code_runner = build_code_runner_from_config(benchmark_config)
 
+    reevaluation_started = datetime.now(UTC)
     reevaluated = []
     for trial in trials:
         entry = entries_by_id.get(trial.entry_id)
-        if not trial.ok or entry is None:
+        if (
+            not trial.ok
+            or entry is None
+            or trial.entry_id in conflicting_ids
+        ):
             reevaluated.append(trial)
             continue
         outcome = evaluate_response(entry, trial.response or "", judge, code_runner)
         reevaluated.append(
             trial.model_copy(update={"evaluation": outcome, "passed": outcome.passed})
         )
+    reevaluation_duration = (datetime.now(UTC) - reevaluation_started).total_seconds()
 
     stats = compute_stats(reevaluated)
+    source_manifest = manifest
+    reevaluation_manifest = build_manifest(
+        benchmark_config, entries, reevaluation_started, reevaluation_duration
+    )
+    reevaluation_manifest = reevaluation_manifest.model_copy(
+        update={
+            "source_run": {
+                "benchmark": source_manifest.benchmark,
+                "created_at_utc": source_manifest.created_at_utc,
+                "minieval_version": source_manifest.minieval_version,
+                "seed": source_manifest.seed,
+                "dataset_sha256": source_manifest.dataset_sha256,
+                "models": [
+                    model.model_dump(mode="json") for model in source_manifest.models
+                ],
+                "path": str(input_dir),
+            },
+            "reevaluation": {
+                "minieval_version": __version__,
+                "created_at_utc": reevaluation_started.isoformat(),
+                "duration_seconds": reevaluation_duration,
+                "dataset_sha256": new_dataset_sha,
+                "evaluators": (
+                    benchmark_config.evaluators.model_dump(mode="json")
+                    if benchmark_config.evaluators
+                    else None
+                ),
+                "judge": judge_manifest_block(benchmark_config),
+                "matching": {
+                    "basis": matching["basis"],
+                    "verified": len(matching["verified"]),
+                    "unverified": len(matching["unverified"]),
+                    "conflicts": sorted(conflicting_ids),
+                },
+            },
+        }
+    )
     destination = output_dir or input_dir / "reevaluated"
-    written = write_reports(destination, manifest, stats, reevaluated, dataset=entries)
+    written = write_reports(
+        destination, reevaluation_manifest, stats, reevaluated, dataset=entries
+    )
 
+    console.print(manifest_table(reevaluation_manifest))
     console.print(stats_table(stats))
     for path in written:
         console.print(f"wrote {path}")
@@ -586,6 +657,25 @@ def manifest_table(manifest) -> Table:
     table.add_row("Dataset", manifest.dataset_path)
     table.add_row("Dataset sha256", manifest.dataset_sha256)
     table.add_row("Entries", str(manifest.dataset_entries))
+    if manifest.judge:
+        table.add_row("Judge model", manifest.judge.get("model") or manifest.judge.get("provider"))
+        table.add_row("Judge rubric", str(manifest.judge.get("rubric_fingerprint")))
+    if manifest.source_run:
+        source = manifest.source_run
+        table.add_row("Source run", source.get("path", "n/a"))
+        table.add_row("Source benchmark", source.get("benchmark", "n/a"))
+        table.add_row("Source version", source.get("minieval_version", "n/a"))
+        table.add_row("Source dataset sha256", source.get("dataset_sha256", "n/a"))
+    if manifest.reevaluation:
+        reevaluation = manifest.reevaluation
+        matching = reevaluation.get("matching", {})
+        table.add_row(
+            "Reevaluation matching",
+            f"{matching.get('basis', 'n/a')}: {matching.get('verified', 0)} verified, "
+            f"{matching.get('unverified', 0)} unverified, "
+            f"{len(matching.get('conflicts', []))} conflict(s)",
+        )
+        table.add_row("Reevaluation dataset sha256", reevaluation.get("dataset_sha256", "n/a"))
     return table
 
 

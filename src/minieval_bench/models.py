@@ -248,3 +248,6 @@ class Manifest(BaseModel):
     shuffle: bool | None = None
     evaluators: dict | None = None
     statistics: dict | None = None
+    judge: dict | None = None
+    source_run: dict | None = None
+    reevaluation: dict | None = None

@@ -8,6 +8,7 @@ from pathlib import Path
 from rich.table import Table
 
 from minieval_bench import __version__
+from minieval_bench.evaluation.judge import DEFAULT_RUBRIC, load_rubric
 from minieval_bench.html_report import build_analysis, write_html_report
 from minieval_bench.models import (
     BenchmarkConfig,
@@ -21,6 +22,45 @@ from minieval_bench.runner import repeat_seed
 
 def dataset_fingerprint(dataset_path: Path) -> str:
     return hashlib.sha256(dataset_path.read_bytes()).hexdigest()
+
+
+def entry_fingerprint(entry: DatasetEntry) -> str:
+    canonical = json.dumps(
+        {
+            "prompt": entry.prompt,
+            "reference": entry.reference,
+            "system": entry.system,
+            "metric": entry.metric,
+        },
+        sort_keys=True,
+        separators=(",", ":"),
+    )
+    return hashlib.sha256(canonical.encode()).hexdigest()
+
+
+def judge_manifest_block(config: BenchmarkConfig) -> dict | None:
+    judge_config = config.evaluators.judge if config.evaluators else None
+    if judge_config is None:
+        return None
+    rubric = DEFAULT_RUBRIC
+    if judge_config.rubric:
+        rubric = load_rubric(Path(judge_config.rubric))
+    return {
+        "provider": judge_config.provider,
+        "model": judge_config.model,
+        "repeats": judge_config.repeats,
+        "rubric_fingerprint": rubric.fingerprint(),
+        "rubric_version": rubric.version,
+        "criteria": [
+            {
+                "id": criterion.id,
+                "scale_min": criterion.scale_min,
+                "scale_max": criterion.scale_max,
+                "weight": criterion.weight,
+            }
+            for criterion in rubric.criteria
+        ],
+    }
 
 
 def build_manifest(
@@ -48,6 +88,7 @@ def build_manifest(
         shuffle=config.defaults.shuffle,
         evaluators=config.evaluators.model_dump(mode="json") if config.evaluators else None,
         statistics=config.statistics.model_dump(mode="json"),
+        judge=judge_manifest_block(config),
     )
 
 
@@ -109,6 +150,47 @@ def load_dataset_snapshot(input_dir: Path) -> list[DatasetEntry] | None:
     if payload.get("dataset") is None:
         return None
     return [DatasetEntry.model_validate(item) for item in payload["dataset"]]
+
+
+def match_dataset_entries(
+    source_manifest: Manifest,
+    snapshot: list[DatasetEntry] | None,
+    dataset_identical: bool,
+    entries: list[DatasetEntry],
+) -> dict:
+    matching = {
+        "basis": "dataset-identical",
+        "verified": {entry.id for entry in entries},
+        "unverified": set(),
+        "conflicts": {},
+    }
+    if dataset_identical:
+        return matching
+    if snapshot is None:
+        return {
+            "basis": "entry-id-only",
+            "verified": set(),
+            "unverified": {entry.id for entry in entries},
+            "conflicts": {},
+        }
+    old_by_id = {entry.id: entry for entry in snapshot}
+    verified = set()
+    unverified = set()
+    conflicts = {}
+    for entry in entries:
+        old_entry = old_by_id.get(entry.id)
+        if old_entry is None:
+            unverified.add(entry.id)
+        elif entry_fingerprint(old_entry) != entry_fingerprint(entry):
+            conflicts[entry.id] = "prompt, reference, system or metric changed since the source run"
+        else:
+            verified.add(entry.id)
+    return {
+        "basis": "snapshot-fingerprints",
+        "verified": verified,
+        "unverified": unverified,
+        "conflicts": conflicts,
+    }
 
 
 def markdown_report(manifest: Manifest, stats: list[ModelStats]) -> str:
