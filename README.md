@@ -419,6 +419,14 @@ Because equal display names do not prove equal models, configuration fields (pro
 
 ![Run comparison report](docs/screenshots/comparison.png)
 
+The latency section labels the displayed duration (generation) and reports evaluation and total medians per model:
+
+![Latency section](docs/screenshots/report-latency-separation.png)
+
+Two-run comparisons over an identical dataset include paired per-question differences with their bootstrap interval:
+
+![Paired differences](docs/screenshots/comparison-paired.png)
+
 ## CSV export
 
 ```bash
