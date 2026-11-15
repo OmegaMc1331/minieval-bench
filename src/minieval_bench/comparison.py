@@ -5,7 +5,10 @@ from pathlib import Path
 from minieval_bench.reports import load_results
 
 INDICATORS = [
-    ("answer_accuracy", "Answer accuracy", "rate"),
+    ("answer_accuracy", "Answer accuracy (deterministic)", "rate"),
+    ("json_schema_conformance", "JSON Schema conformance", "rate"),
+    ("code_eval_pass_rate", "Code evaluation pass rate", "rate"),
+    ("judge_score_mean", "Judge score (mean)", "score"),
     ("overall_pass_rate", "Overall pass rate", "rate"),
     ("success_rate", "Request success rate", "rate"),
     ("evaluation_coverage", "Evaluation coverage", "rate"),

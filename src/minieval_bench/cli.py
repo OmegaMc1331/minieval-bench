@@ -33,6 +33,7 @@ from minieval_bench.models import BenchmarkConfig, DatasetEntry
 from minieval_bench.reports import (
     build_manifest,
     errors_table,
+    evaluation_breakdown_table,
     load_dataset_snapshot,
     load_results,
     stats_table,
@@ -135,6 +136,9 @@ def run(
     )
 
     console.print(stats_table(stats))
+    breakdown = evaluation_breakdown_table(stats)
+    if breakdown:
+        console.print(breakdown)
     errors = errors_table(stats)
     if errors:
         console.print(errors)
@@ -207,6 +211,9 @@ def report(
 
     console.print(manifest_table(manifest))
     console.print(stats_table(stats))
+    breakdown = evaluation_breakdown_table(stats)
+    if breakdown:
+        console.print(breakdown)
     errors = errors_table(stats)
     if errors:
         console.print(errors)

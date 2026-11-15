@@ -178,6 +178,35 @@ def is_binary_evaluated(trial: TrialResult) -> bool:
     return trial.evaluation.status == "completed" and trial.evaluation.passed is not None
 
 
+def evaluator_name(trial: TrialResult) -> str:
+    return trial.evaluation.evaluator if trial.evaluation else "deterministic"
+
+
+def binary_rate(trials: list[TrialResult]) -> float | None:
+    binary = [trial for trial in trials if is_binary_evaluated(trial)]
+    if not binary:
+        return None
+    passed = sum(1 for trial in binary if trial.passed)
+    return passed / len(binary)
+
+
+def code_test_totals(trials: list[TrialResult]) -> tuple[int | None, int | None]:
+    passed_total = 0
+    test_total = 0
+    reported = False
+    for trial in trials:
+        if not trial.evaluation or not trial.evaluation.details:
+            continue
+        details = trial.evaluation.details
+        if trial.evaluation.status == "completed" and isinstance(details.get("total"), int):
+            passed_total += details["passed"]
+            test_total += details["total"]
+            reported = True
+    if not reported:
+        return None, None
+    return passed_total, test_total
+
+
 def compute_stats(trials: list[TrialResult]) -> list[ModelStats]:
     grouped: dict[str, list[TrialResult]] = {}
     for trial in trials:
@@ -188,6 +217,9 @@ def compute_stats(trials: list[TrialResult]) -> list[ModelStats]:
         model_trials = grouped[model]
         succeeded = [trial for trial in model_trials if trial.ok]
         binary = [trial for trial in succeeded if is_binary_evaluated(trial)]
+        by_evaluator: dict[str, list[TrialResult]] = {}
+        for trial in succeeded:
+            by_evaluator.setdefault(evaluator_name(trial), []).append(trial)
         latencies = [
             trial.generation_ms if trial.generation_ms is not None else trial.latency_ms
             for trial in succeeded
@@ -221,7 +253,20 @@ def compute_stats(trials: list[TrialResult]) -> list[ModelStats]:
         evaluation_cost, evaluation_cost_reported = available_total(
             [trial.evaluation.cost_usd for trial in evaluated]
         )
-        answer_accuracy = passed / len(binary) if binary else None
+
+        deterministic_trials = by_evaluator.get("deterministic", [])
+        answer_accuracy = binary_rate(deterministic_trials)
+        json_schema_trials = by_evaluator.get("json_schema", [])
+        code_trials = by_evaluator.get("code_tests", [])
+        judge_trials = by_evaluator.get("judge", [])
+        judge_scores = [
+            trial.evaluation.score
+            for trial in judge_trials
+            if trial.evaluation
+            and trial.evaluation.status == "completed"
+            and trial.evaluation.score is not None
+        ]
+        code_passed, code_total = code_test_totals(code_trials)
         stats.append(
             ModelStats(
                 model=model,
@@ -260,6 +305,16 @@ def compute_stats(trials: list[TrialResult]) -> list[ModelStats]:
                 evaluation_output_tokens=evaluation_output_tokens,
                 evaluation_cost_usd=evaluation_cost,
                 evaluation_cost_reported=evaluation_cost_reported,
+                deterministic_trials=len(deterministic_trials),
+                json_schema_conformance=binary_rate(json_schema_trials),
+                json_schema_trials=len(json_schema_trials),
+                code_eval_pass_rate=binary_rate(code_trials),
+                code_eval_trials=len(code_trials),
+                code_tests_passed=code_passed,
+                code_tests_total=code_total,
+                judge_score_mean=statistics.mean(judge_scores) if judge_scores else None,
+                judge_evaluations=len(judge_scores),
+                judge_trials=len(judge_trials),
             )
         )
     return stats

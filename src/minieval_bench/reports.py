@@ -67,13 +67,14 @@ def write_reports(
     manifest_path.write_text(
         json.dumps(manifest.model_dump(mode="json"), indent=2) + "\n", encoding="utf-8"
     )
-    statistics, evaluator_summaries = build_analysis(manifest, trials)
+    statistics, evaluator_summaries, evaluator_by_model = build_analysis(manifest, trials)
     payload = {
         "manifest": manifest.model_dump(mode="json"),
         "stats": [item.model_dump(mode="json") for item in stats],
         "trials": [trial.model_dump(mode="json") for trial in trials],
         "statistics": statistics,
         "evaluators": evaluator_summaries,
+        "evaluatorsByModel": evaluator_by_model,
     }
     if dataset is not None:
         payload["dataset"] = [entry.model_dump(mode="json") for entry in dataset]
@@ -207,6 +208,48 @@ def markdown_report(manifest: Manifest, stats: list[ModelStats]) -> str:
             )
         lines.append("")
 
+    breakdown_rows = [
+        model_stats
+        for model_stats in stats
+        if model_stats.json_schema_trials
+        or model_stats.code_eval_trials
+        or model_stats.judge_trials
+        or model_stats.evaluator_failed
+        or model_stats.evaluator_unavailable
+    ]
+    if breakdown_rows:
+        lines += [
+            "## Evaluation breakdown",
+            "",
+            "Accuracy above covers deterministic metrics only. Each evaluator below has"
+            " its own denominator (binary trials of that evaluator).",
+            "",
+            "| Model | Deterministic | Answer accuracy | JSON conformance | Code pass"
+            " | Code tests | Judge score | Judge judged/eligible |",
+            "| --- | --- | --- | --- | --- | --- | --- | --- |",
+        ]
+        for model_stats in breakdown_rows:
+            json_cell = rate_with_count(
+                model_stats.json_schema_conformance, model_stats.json_schema_trials
+            )
+            code_cell = rate_with_count(
+                model_stats.code_eval_pass_rate, model_stats.code_eval_trials
+            )
+            judged = count_cell(model_stats.judge_evaluations)
+            eligible = count_cell(model_stats.judge_trials)
+            judge_cell = f"{judged} / {eligible}"
+            lines.append(
+                f"| {model_stats.model} "
+                f"| {count_cell(model_stats.deterministic_trials)} "
+                f"| {rate(model_stats.answer_accuracy)} "
+                f"| {json_cell} "
+                f"| {code_cell} "
+                f"| {tests_cell(model_stats)} "
+                f"| {score_cell(model_stats.judge_score_mean)} "
+                f"| {judge_cell} |"
+            )
+        lines.append("")
+
     error_rows = [
         (model_stats.model, error, str(count))
         for model_stats in stats
@@ -226,6 +269,26 @@ def cell(value: int | float | None, format_spec: str) -> str:
 
 def rate(value: float | None) -> str:
     return "n/a" if value is None else format(value, ".1%")
+
+
+def count_cell(value: int | None) -> str:
+    return "0" if value == 0 else ("n/a" if value is None else str(value))
+
+
+def rate_with_count(value: float | None, trials: int | None) -> str:
+    if value is None:
+        return "n/a (0)" if trials == 0 else "n/a"
+    return f"{format(value, '.1%')} ({trials})"
+
+
+def tests_cell(model_stats: ModelStats) -> str:
+    if model_stats.code_tests_total is None:
+        return "n/a"
+    return f"{model_stats.code_tests_passed}/{model_stats.code_tests_total}"
+
+
+def score_cell(value: float | None) -> str:
+    return "n/a" if value is None else format(value, ".3f")
 
 
 def consumption_cell(
@@ -286,6 +349,41 @@ def stats_table(stats: list[ModelStats]) -> Table:
             consumption_cell(
                 model_stats.cost_usd, model_stats.cost_reported, model_stats.succeeded, ".6f"
             ),
+        )
+    return table
+
+
+def evaluation_breakdown_table(stats: list[ModelStats]) -> Table | None:
+    rows = [
+        model_stats
+        for model_stats in stats
+        if model_stats.json_schema_trials
+        or model_stats.code_eval_trials
+        or model_stats.judge_trials
+        or model_stats.evaluator_failed
+        or model_stats.evaluator_unavailable
+    ]
+    if not rows:
+        return None
+    table = Table(title="Evaluation breakdown (per evaluator)")
+    table.add_column("Model")
+    table.add_column("Deterministic", justify="right")
+    table.add_column("Answer accuracy", justify="right")
+    table.add_column("JSON conformance", justify="right")
+    table.add_column("Code pass", justify="right")
+    table.add_column("Code tests", justify="right")
+    table.add_column("Judge score", justify="right")
+    table.add_column("Judge judged/eligible", justify="right")
+    for model_stats in rows:
+        table.add_row(
+            model_stats.model,
+            count_cell(model_stats.deterministic_trials),
+            rate(model_stats.answer_accuracy),
+            rate_with_count(model_stats.json_schema_conformance, model_stats.json_schema_trials),
+            rate_with_count(model_stats.code_eval_pass_rate, model_stats.code_eval_trials),
+            tests_cell(model_stats),
+            score_cell(model_stats.judge_score_mean),
+            f"{count_cell(model_stats.judge_evaluations)} / {count_cell(model_stats.judge_trials)}",
         )
     return table
 

@@ -240,6 +240,45 @@ def _passed_value(trial: TrialResult) -> bool | None:
     return trial.evaluation.passed
 
 
+def per_model_evaluator_summaries(trials: list[TrialResult]) -> list[dict]:
+    grouped: dict[tuple[str, str], list[TrialResult]] = {}
+    for trial in trials:
+        if not trial.ok:
+            continue
+        evaluator = trial.evaluation.evaluator if trial.evaluation else "deterministic"
+        grouped.setdefault((trial.model, evaluator), []).append(trial)
+
+    summaries = []
+    for (model, evaluator) in sorted(grouped):
+        evaluator_trials = grouped[(model, evaluator)]
+        completed = [
+            trial
+            for trial in evaluator_trials
+            if trial.evaluation is None or trial.evaluation.status == "completed"
+        ]
+        binary = [trial for trial in completed if _passed_value(trial) is not None]
+        passed = sum(1 for trial in binary if _passed_value(trial) is True)
+        scores = [
+            trial.evaluation.score
+            for trial in completed
+            if trial.evaluation is not None and trial.evaluation.score is not None
+        ]
+        summaries.append(
+            {
+                "model": model,
+                "evaluator": evaluator,
+                "trials": len(evaluator_trials),
+                "completed": len(completed),
+                "passed": passed,
+                "binary": len(binary),
+                "binary_pass_rate": passed / len(binary) if binary else None,
+                "mean_score": statistics.mean(scores) if scores else None,
+                "score_count": len(scores),
+            }
+        )
+    return summaries
+
+
 def _sum_reported(trials: list[TrialResult], pick) -> float | int | None:
     values = [
         pick(trial)

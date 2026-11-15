@@ -201,6 +201,16 @@ class ModelStats(BaseModel):
     evaluation_output_tokens: int | None = None
     evaluation_cost_usd: float | None = None
     evaluation_cost_reported: int | None = None
+    deterministic_trials: int | None = None
+    json_schema_conformance: float | None = None
+    json_schema_trials: int | None = None
+    code_eval_pass_rate: float | None = None
+    code_eval_trials: int | None = None
+    code_tests_passed: int | None = None
+    code_tests_total: int | None = None
+    judge_score_mean: float | None = None
+    judge_evaluations: int | None = None
+    judge_trials: int | None = None
 
     @model_validator(mode="before")
     @classmethod
