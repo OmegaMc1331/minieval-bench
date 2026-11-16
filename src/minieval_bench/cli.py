@@ -14,6 +14,14 @@ from rich.table import Table
 from minieval_bench import __version__
 from minieval_bench.comparison import build_comparison_payload
 from minieval_bench.config import ConfigError, DatasetError, load_config, load_dataset
+from minieval_bench.datasets import (
+    DatasetImportError,
+    cache_dir,
+    dataset_summary,
+    import_huggingface,
+    import_local_file,
+    validate_dataset_file,
+)
 from minieval_bench.evaluation import (
     build_code_runner_from_config,
     build_judge_from_config,
@@ -46,6 +54,7 @@ from minieval_bench.reports import (
 )
 from minieval_bench.runner import compute_stats, run_benchmark
 from minieval_bench.suites.cli import suite_app
+from minieval_bench.suites.registry import discover_suites, load_suite
 
 app = typer.Typer(
     no_args_is_help=True,
@@ -740,6 +749,178 @@ def models_table(benchmark_config: BenchmarkConfig) -> Table:
 
 
 app.add_typer(suite_app, name="suite")
+
+
+dataset_app = typer.Typer(
+    no_args_is_help=True,
+    help="Validate, import and inspect benchmark datasets.",
+)
+app.add_typer(dataset_app, name="dataset")
+
+
+@dataset_app.command("list")
+def dataset_list(
+    paths: Annotated[
+        list[Path] | None,
+        typer.Option("--path", help="Extra directory scanned for suites (repeat the option)."),
+    ] = None,
+) -> None:
+    """List the datasets of every suite available in the registry."""
+    summaries = discover_suites(paths)
+    rows = []
+    for summary in summaries:
+        if summary.error is not None:
+            continue
+        try:
+            loaded = load_suite(summary.suite_id, paths)
+        except Exception:
+            continue
+        for task in loaded.definition.tasks:
+            dataset = loaded.datasets[task.id]
+            metrics = ", ".join(
+                f"{name} x{count}"
+                for name, count in sorted(dataset.metric_counts().items())
+            )
+            rows.append(
+                (
+                    loaded.definition.id,
+                    loaded.definition.version,
+                    task.id,
+                    dataset.reference,
+                    str(len(dataset.entries)),
+                    dataset.sha256[:12] + "…",
+                    metrics,
+                )
+            )
+    if rows:
+        table = Table(title="Suite datasets")
+        table.add_column("Suite")
+        table.add_column("Version")
+        table.add_column("Task")
+        table.add_column("Dataset")
+        table.add_column("Entries", justify="right")
+        table.add_column("sha256")
+        table.add_column("Metrics")
+        for row in rows:
+            table.add_row(*row)
+        console.print(table)
+    else:
+        console.print("No suite datasets found in the registry.")
+    hf_cache = cache_dir() / "hf"
+    if hf_cache.is_dir() and any(hf_cache.rglob("*")):
+        console.print(f"Hugging Face download cache: {hf_cache}")
+
+
+@dataset_app.command("validate")
+def dataset_validate(
+    dataset_path: Annotated[Path, typer.Argument(help="JSONL dataset file to check.")],
+) -> None:
+    """Validate a JSONL dataset: encoding, ids, metrics, schemas and tests."""
+    try:
+        entries, sha = validate_dataset_file(dataset_path)
+    except DatasetImportError as exc:
+        console.print(f"[red]{exc}[/red]")
+        raise typer.Exit(1) from exc
+    summary = dataset_summary(entries)
+    metrics = ", ".join(
+        f"{name} x{count}" for name, count in sorted(summary["metrics"].items())
+    )
+    console.print(
+        f"[green]Dataset is valid:[/green] {summary['entries']} entries, "
+        f"sha256 {sha[:12]}…\nMetrics: {metrics}"
+    )
+    if summary["categories"]:
+        categories = ", ".join(
+            f"{name} x{count}"
+            for name, count in sorted(summary["categories"].items())
+        )
+        console.print(f"Categories: {categories}")
+
+
+@dataset_app.command("import")
+def dataset_import(
+    source: Annotated[Path, typer.Option("--source", help="Local CSV or JSON file to import.")],
+    output: Annotated[Path, typer.Option("--output", help="Destination JSONL file.")],
+    delimiter: Annotated[
+        str, typer.Option("--delimiter", help="CSV field delimiter (default comma).")
+    ] = ",",
+) -> None:
+    """Convert a local CSV or JSON file into a validated MiniEval dataset."""
+    if len(delimiter) != 1:
+        console.print("[red]--delimiter must be a single character.[/red]")
+        raise typer.Exit(1)
+    try:
+        report = import_local_file(source, output, delimiter)
+    except DatasetImportError as exc:
+        console.print(f"[red]{exc}[/red]")
+        raise typer.Exit(1) from exc
+    console.print(
+        f"[green]Imported {report.entry_count} entries[/green] from {source} "
+        f"to {output}\nsha256 {report.output_sha256}"
+    )
+    console.print(
+        f"provenance written to {output}.provenance.json; the source itself was not"
+        " modified"
+    )
+
+
+@dataset_app.command("import-hf")
+def dataset_import_hf(
+    dataset_id: Annotated[str, typer.Option("--dataset", help="Hugging Face dataset id.")],
+    revision: Annotated[
+        str,
+        typer.Option("--revision", help="Exact commit sha of the dataset revision."),
+    ],
+    filename: Annotated[
+        str, typer.Option("--file", help="File to import inside the dataset repository.")
+    ],
+    output: Annotated[Path, typer.Option("--output", help="Destination JSONL file.")],
+    license_declared: Annotated[
+        str | None,
+        typer.Option(
+            "--license",
+            help="License you verified for this content, recorded in the provenance.",
+        ),
+    ] = None,
+    max_bytes: Annotated[
+        int,
+        typer.Option("--max-bytes", help="Download size limit in bytes."),
+    ] = 64 * 1024 * 1024,
+    refresh_cache: Annotated[
+        bool,
+        typer.Option(
+            "--refresh-cache", help="Download again even if the file is already cached."
+        ),
+    ] = False,
+) -> None:
+    """Import one file of a public Hugging Face dataset at an immutable revision."""
+    try:
+        report = import_huggingface(
+            dataset_id=dataset_id,
+            revision=revision,
+            filename=filename,
+            output=output,
+            license_declared=license_declared,
+            max_bytes=max_bytes,
+            refresh_cache=refresh_cache,
+        )
+    except DatasetImportError as exc:
+        console.print(f"[red]{exc}[/red]")
+        raise typer.Exit(1) from exc
+    console.print(
+        f"[green]Imported {report.entry_count} entries[/green] from {report.source_reference}"
+        f" to {report.output_path}\nsha256 {report.output_sha256}"
+    )
+    license_note = (
+        f"license: {report.license_value} ({report.license_basis})"
+        if report.license_value
+        else "license: unknown - verify redistribution rights before sharing this content"
+    )
+    console.print(license_note)
+    console.print(
+        "Provenance (exact revision, hashes, transformations) is recorded next to the"
+        " output file. Nothing was executed from the remote source."
+    )
 
 
 if __name__ == "__main__":
