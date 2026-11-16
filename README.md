@@ -78,13 +78,13 @@ uv run minieval-bench report --input results/
 Example output of `run` on the bundled benchmark (seed 42, 6 entries, 3 repeats, 2 models):
 
 ```text
-                                                    Benchmark results
-┌─────────────┬──────────┬────┬────────┬─────────┬──────────┬──────────┬─────────┬─────────────┬──────────┬────────────┬───────────┬────────────┬────────────┐
-│ Model       │ Requests │ OK │ Failed │ Success │ Accuracy │ Coverage │ Overall │ Median (ms) │ P95 (ms) │ Queue (ms) │ In tokens │ Out tokens │ Cost (USD) │
-├─────────────┼──────────┼────┼────────┼─────────┼──────────┼──────────┼─────────┼─────────────┼──────────┼────────────┼───────────┼────────────┼────────────┤
-│ mock-free   │       18 │ 18 │      0 │  100.0% │    50.0% │   100.0% │   50.0% │        25.8 │     40.5 │       39.6 │        96 │         72 │        n/a │
-│ mock-priced │       18 │ 18 │      0 │  100.0% │    50.0% │   100.0% │   50.0% │        32.0 │     42.5 │      153.1 │        96 │         72 │   0.000156 │
-└─────────────┴──────────┴────┴────────┴─────────┴──────────┴──────────┴─────────┴─────────────┴──────────┴────────────┴───────────┴────────────┴────────────┘
+                                                                                              Benchmark results
+┌─────────────┬──────────┬────┬────────┬─────────┬──────────┬──────────┬─────────┬─────────────────┬──────────────┬──────────────────┬───────────────────┬────────────┬───────────┬────────────┬────────────┐
+│ Model       │ Requests │ OK │ Failed │ Success │ Accuracy │ Coverage │ Overall │ Median gen (ms) │ P95 gen (ms) │ Median eval (ms) │ Median total (ms) │ Queue (ms) │ In tokens │ Out tokens │ Cost (USD) │
+├─────────────┼──────────┼────┼────────┼─────────┼──────────┼──────────┼─────────┼─────────────────┼──────────────┼──────────────────┼───────────────────┼────────────┼───────────┼────────────┼────────────┤
+│ mock-free   │       18 │ 18 │      0 │  100.0% │    50.0% │  100.0% │  50.0% │            25.9 │         40.5 │              0.1 │              25.9 │       39.8 │        96 │         72 │        n/a │
+│ mock-priced │       18 │ 18 │      0 │  100.0% │    50.0% │  100.0% │  50.0% │            31.9 │         42.4 │              0.1 │              31.9 │      154.0 │        96 │         72 │   0.000156 │
+└─────────────┴──────────┴────┴────────┴─────────┴──────────┴──────────┴─────────┴─────────────────┴──────────────┴──────────────────┴───────────────────┴────────────┴───────────┴────────────┴────────────┘
 ```
 
 The accuracy of 50% comes from the dataset itself: three entries match the mock response format (`mock-` plus eight hex characters) and three deliberately do not.
@@ -143,6 +143,8 @@ The built-in suites are small, original and honest about their scope: they
 exercise the protocol with objectively checkable answers, they are not
 statistically representative evaluations. Suite format, aggregation rules and
 the built-in catalog: [docs/SUITES.md](docs/SUITES.md).
+
+![Suite report](docs/screenshots/suite-report.png)
 
 ## Configuration
 
