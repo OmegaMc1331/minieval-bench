@@ -1,0 +1,1100 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>MiniEval comparison</title>
+<style>
+:root {
+  --bg: #ffffff;
+  --surface: #f6f7f8;
+  --text: #1f2328;
+  --muted: #5f6368;
+  --border: #e3e5e8;
+  --accent: #2563eb;
+  --good: #15803d;
+  --bad: #b91c1c;
+  --warn: #b45309;
+  --mono: ui-monospace, "Cascadia Mono", "SF Mono", Consolas, Menlo, monospace;
+  --sans: -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+  --c1: #2563eb;
+  --c2: #059669;
+  --c3: #d97706;
+  --c4: #7c3aed;
+  --c5: #db2777;
+  --c6: #0891b2;
+  --c7: #64748b;
+  --c8: #65a30d;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --bg: #101317;
+    --surface: #181c22;
+    --text: #e6e8ea;
+    --muted: #9aa1ab;
+    --border: #2a2f37;
+    --accent: #60a5fa;
+    --good: #4ade80;
+    --bad: #f87171;
+    --warn: #fbbf24;
+    --c1: #60a5fa;
+    --c2: #34d399;
+    --c3: #fbbf24;
+    --c4: #a78bfa;
+    --c5: #f472b6;
+    --c6: #22d3ee;
+    --c7: #94a3b8;
+    --c8: #a3e635;
+  }
+}
+
+:root[data-theme="dark"] {
+  --bg: #101317;
+  --surface: #181c22;
+  --text: #e6e8ea;
+  --muted: #9aa1ab;
+  --border: #2a2f37;
+  --accent: #60a5fa;
+  --good: #4ade80;
+  --bad: #f87171;
+  --warn: #fbbf24;
+  --c1: #60a5fa;
+  --c2: #34d399;
+  --c3: #fbbf24;
+  --c4: #a78bfa;
+  --c5: #f472b6;
+  --c6: #22d3ee;
+  --c7: #94a3b8;
+  --c8: #a3e635;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+body {
+  margin: 0;
+  background: var(--bg);
+  color: var(--text);
+  font-family: var(--sans);
+  font-size: 15px;
+  line-height: 1.5;
+}
+
+.container {
+  max-width: 1080px;
+  margin: 0 auto;
+  padding: 0 20px 64px;
+}
+
+.topbar {
+  border-bottom: 1px solid var(--border);
+  background: var(--bg);
+  position: sticky;
+  top: 0;
+  z-index: 10;
+}
+
+.topbar-inner {
+  max-width: 1080px;
+  margin: 0 auto;
+  padding: 10px 20px;
+  display: flex;
+  align-items: center;
+  gap: 16px;
+}
+
+.brand {
+  font-weight: 600;
+  letter-spacing: 0.02em;
+  color: var(--text);
+  text-decoration: none;
+}
+
+.section-nav {
+  display: flex;
+  gap: 2px;
+  overflow-x: auto;
+  flex: 1;
+  white-space: nowrap;
+  -webkit-overflow-scrolling: touch;
+}
+
+.section-nav a {
+  color: var(--muted);
+  text-decoration: none;
+  font-size: 13px;
+  padding: 4px 10px;
+  border-radius: 4px;
+}
+
+.section-nav a:hover,
+.section-nav a:focus-visible {
+  color: var(--text);
+  background: var(--surface);
+}
+
+.theme-toggle {
+  font: inherit;
+  font-size: 13px;
+  color: var(--muted);
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  padding: 4px 12px;
+  cursor: pointer;
+  flex-shrink: 0;
+}
+
+.theme-toggle:hover {
+  color: var(--text);
+  border-color: var(--muted);
+}
+
+section {
+  margin-top: 48px;
+  scroll-margin-top: 64px;
+}
+
+h2 {
+  font-size: 19px;
+  font-weight: 600;
+  margin: 0 0 4px;
+}
+
+.section-note {
+  color: var(--muted);
+  font-size: 13px;
+  margin: 0 0 16px;
+}
+
+h3 {
+  font-size: 15px;
+  font-weight: 600;
+  margin: 28px 0 10px;
+}
+
+code,
+.mono {
+  font-family: var(--mono);
+  font-size: 0.92em;
+}
+
+dl.facts {
+  display: grid;
+  grid-template-columns: max-content 1fr;
+  gap: 6px 24px;
+  margin: 0;
+}
+
+dl.facts dt {
+  color: var(--muted);
+  font-size: 13px;
+  align-self: baseline;
+}
+
+dl.facts dd {
+  margin: 0;
+  font-family: var(--mono);
+  font-size: 13px;
+  overflow-wrap: anywhere;
+}
+
+.table-scroll {
+  overflow-x: auto;
+}
+
+table {
+  border-collapse: collapse;
+  width: 100%;
+  font-size: 13.5px;
+}
+
+th,
+td {
+  text-align: left;
+  padding: 7px 10px;
+  border-bottom: 1px solid var(--border);
+  vertical-align: top;
+}
+
+th {
+  color: var(--muted);
+  font-weight: 500;
+  font-size: 12.5px;
+  white-space: nowrap;
+}
+
+th button {
+  font: inherit;
+  color: inherit;
+  background: none;
+  border: none;
+  padding: 0;
+  cursor: pointer;
+}
+
+th button:hover {
+  color: var(--text);
+}
+
+th .sort-arrow {
+  display: inline-block;
+  width: 1em;
+}
+
+td.num,
+th.num {
+  text-align: right;
+  font-family: var(--mono);
+  white-space: nowrap;
+}
+
+td.na {
+  color: var(--muted);
+}
+
+.status-ok {
+  color: var(--good);
+}
+
+.status-failed {
+  color: var(--bad);
+}
+
+.eval-pass {
+  color: var(--good);
+}
+
+.eval-fail {
+  color: var(--bad);
+}
+
+.eval-na {
+  color: var(--muted);
+}
+
+.toolbar {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  align-items: center;
+  margin-bottom: 12px;
+}
+
+.toolbar label {
+  color: var(--muted);
+  font-size: 12.5px;
+}
+
+input[type="text"],
+select {
+  font: inherit;
+  font-size: 13px;
+  color: var(--text);
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  padding: 5px 8px;
+}
+
+input[type="text"]:focus-visible,
+select:focus-visible,
+button:focus-visible,
+a:focus-visible,
+[tabindex="0"]:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 1px;
+}
+
+input[type="checkbox"] {
+  accent-color: var(--accent);
+}
+
+fieldset {
+  border: none;
+  padding: 0;
+  margin: 0;
+}
+
+legend {
+  color: var(--muted);
+  font-size: 12.5px;
+  padding: 0;
+  margin-bottom: 6px;
+}
+
+.radio-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 14px;
+  margin-bottom: 14px;
+  font-size: 13.5px;
+}
+
+.radio-row label {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+}
+
+.chart-rows {
+  display: grid;
+  gap: 8px;
+}
+
+.chart-row {
+  display: grid;
+  grid-template-columns: 170px 1fr max-content;
+  gap: 12px;
+  align-items: center;
+}
+
+.chart-row .row-label {
+  font-family: var(--mono);
+  font-size: 12.5px;
+  overflow-wrap: anywhere;
+}
+
+.chart-row .row-value {
+  font-family: var(--mono);
+  font-size: 12.5px;
+  color: var(--muted);
+  white-space: nowrap;
+}
+
+.track {
+  background: var(--surface);
+  border-radius: 3px;
+  height: 16px;
+  display: flex;
+  overflow: hidden;
+}
+
+.track .fill {
+  height: 100%;
+}
+
+.track .fill.partial {
+  background-image: repeating-linear-gradient(
+    45deg,
+    transparent 0,
+    transparent 5px,
+    rgba(127, 127, 127, 0.35) 5px,
+    rgba(127, 127, 127, 0.35) 7px
+  );
+}
+
+.segment {
+  height: 100%;
+  min-width: 1px;
+}
+
+.bar-note {
+  font-size: 11.5px;
+  color: var(--warn);
+  font-family: var(--mono);
+}
+
+.histogram {
+  display: flex;
+  align-items: flex-end;
+  gap: 2px;
+  height: 110px;
+  margin: 8px 0 4px;
+}
+
+.histogram .bin {
+  flex: 1;
+  background: var(--c1);
+  border-radius: 2px 2px 0 0;
+  min-height: 1px;
+}
+
+.histogram .bin:hover,
+.histogram .bin:focus-visible {
+  background: var(--accent);
+}
+
+.histogram-axis {
+  display: flex;
+  justify-content: space-between;
+  color: var(--muted);
+  font-size: 11.5px;
+  font-family: var(--mono);
+}
+
+.multi-chart {
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 14px 16px;
+  margin-bottom: 14px;
+}
+
+.multi-chart h4 {
+  margin: 0 0 4px;
+  font-size: 13.5px;
+  font-family: var(--mono);
+  font-weight: 600;
+}
+
+.multi-chart .sub {
+  color: var(--muted);
+  font-size: 12px;
+  margin: 0 0 8px;
+}
+
+.legend {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px 16px;
+  margin: 10px 0 0;
+  font-size: 12.5px;
+}
+
+.legend-item {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.legend-swatch {
+  width: 10px;
+  height: 10px;
+  border-radius: 2px;
+  flex-shrink: 0;
+}
+
+details.data-details {
+  margin-top: 12px;
+  font-size: 13px;
+}
+
+details.data-details summary {
+  color: var(--muted);
+  cursor: pointer;
+}
+
+details.data-details table {
+  margin-top: 8px;
+}
+
+.warning-box {
+  border-left: 3px solid var(--warn);
+  background: var(--surface);
+  padding: 10px 14px;
+  margin: 12px 0;
+  font-size: 13.5px;
+}
+
+.warning-box ul {
+  margin: 6px 0 0;
+  padding-left: 20px;
+}
+
+.empty-note {
+  color: var(--muted);
+  font-size: 13.5px;
+  padding: 12px 0;
+}
+
+.trial-detail {
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  margin: 12px 0;
+  padding: 14px 16px;
+}
+
+.trial-detail header {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  gap: 12px;
+  margin-bottom: 8px;
+}
+
+.trial-detail header h4 {
+  font-family: var(--mono);
+  font-size: 13.5px;
+  margin: 0;
+  overflow-wrap: anywhere;
+}
+
+.trial-detail pre {
+  background: var(--surface);
+  border-radius: 4px;
+  padding: 10px 12px;
+  margin: 6px 0 0;
+  font-family: var(--mono);
+  font-size: 12.5px;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  max-height: 300px;
+  overflow-y: auto;
+}
+
+.trial-detail .field-label {
+  color: var(--muted);
+  font-size: 12px;
+  margin-top: 12px;
+}
+
+.pagination {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-top: 12px;
+  font-size: 13px;
+  color: var(--muted);
+}
+
+.pagination button {
+  font: inherit;
+  font-size: 13px;
+  border: 1px solid var(--border);
+  background: var(--bg);
+  color: var(--text);
+  border-radius: 4px;
+  padding: 4px 12px;
+  cursor: pointer;
+}
+
+.pagination button:disabled {
+  opacity: 0.45;
+  cursor: default;
+}
+
+.result-count {
+  color: var(--muted);
+  font-size: 12.5px;
+  margin-left: auto;
+}
+
+.delta-up {
+  color: var(--good);
+}
+
+.delta-down {
+  color: var(--bad);
+}
+
+.delta-na {
+  color: var(--muted);
+}
+
+.pair-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 14px;
+}
+
+.pair-grid pre {
+  background: var(--surface);
+  border-radius: 4px;
+  padding: 10px 12px;
+  margin: 4px 0 0;
+  font-family: var(--mono);
+  font-size: 12.5px;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  max-height: 220px;
+  overflow-y: auto;
+}
+
+.pair-grid .sub {
+  color: var(--muted);
+  font-size: 12px;
+  margin: 0;
+}
+
+.judgment-list {
+  margin: 10px 0 0;
+  padding-left: 20px;
+  font-size: 13px;
+}
+
+.criteria-table td.mono {
+  white-space: nowrap;
+}
+
+.score-bar-note {
+  color: var(--muted);
+  font-size: 12px;
+}
+
+@media (max-width: 720px) {
+  .pair-grid {
+    grid-template-columns: 1fr;
+  }
+}
+
+.diff-cell {
+  background: var(--surface);
+}
+
+@media (max-width: 720px) {
+  .chart-row {
+    grid-template-columns: 1fr;
+    gap: 4px;
+  }
+
+  .chart-row .row-value {
+    justify-self: end;
+  }
+
+  .toolbar {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .toolbar input[type="text"],
+  .toolbar select {
+    width: 100%;
+  }
+
+  dl.facts {
+    grid-template-columns: 1fr;
+    gap: 2px;
+  }
+
+  dl.facts dd {
+    margin-bottom: 8px;
+  }
+}
+
+</style>
+</head>
+<body>
+<header class="topbar">
+  <div class="topbar-inner">
+    <a class="brand" href="#runs">MiniEval</a>
+    <nav id="section-nav" class="section-nav" aria-label="Report sections"></nav>
+    <button id="theme-toggle" class="theme-toggle" type="button">Theme</button>
+  </div>
+</header>
+<main id="app" class="container">
+  <noscript>
+    <p>JavaScript is disabled. The interactive sections of this comparison report
+    need JavaScript to render.</p>
+  </noscript>
+</main>
+<script id="report-data" type="application/json">{"kind":"compare","runs":[{"label":"mock-demo (1)","benchmark":"mock-demo","created_at_utc":"2026-11-16T21:46:18.450739+00:00","minieval_version":"0.4.0","seed":42,"repeats":3,"concurrency":4,"shuffle":false,"dataset_sha256":"3ee246991f64a0a7c3bb97749a1b997ea0a36f42a642cbe66bd9811d45c1c93d","dataset_entries":6,"path":"results-legacy\\demo","models":[{"name":"mock-free","provider":"mock","model":"mock-free","temperature":null,"max_tokens":null,"timeout":30.0,"drop_params":false,"input_cost_per_1m":null,"output_cost_per_1m":null},{"name":"mock-priced","provider":"mock","model":"mock-priced","temperature":null,"max_tokens":null,"timeout":30.0,"drop_params":false,"input_cost_per_1m":0.5,"output_cost_per_1m":1.5}],"judge":null},{"label":"mock-demo (2)","benchmark":"mock-demo","created_at_utc":"2026-11-16T21:46:18.450739+00:00","minieval_version":"0.4.0","seed":42,"repeats":3,"concurrency":4,"shuffle":false,"dataset_sha256":"3ee246991f64a0a7c3bb97749a1b997ea0a36f42a642cbe66bd9811d45c1c93d","dataset_entries":6,"path":"results-legacy\\demo","models":[{"name":"mock-free","provider":"mock","model":"mock-free","temperature":null,"max_tokens":null,"timeout":30.0,"drop_params":false,"input_cost_per_1m":null,"output_cost_per_1m":null},{"name":"mock-priced","provider":"mock","model":"mock-priced","temperature":null,"max_tokens":null,"timeout":30.0,"drop_params":false,"input_cost_per_1m":0.5,"output_cost_per_1m":1.5}],"judge":null}],"warnings":[],"paired":[{"model":"mock-free","metric":"pass rate (conditional on evaluation)","differences_summary":{"mean":0.0,"median":0.0,"std":0.0,"min":0.0,"max":0.0,"count":6},"ci95":{"low":0.0,"high":0.0,"method":"percentile bootstrap over question means"},"units":6,"resampling":{"unit":"question (repeats averaged first)","iterations":1000,"confidence_level":0.95}},{"model":"mock-priced","metric":"pass rate (conditional on evaluation)","differences_summary":{"mean":0.0,"median":0.0,"std":0.0,"min":0.0,"max":0.0,"count":6},"ci95":{"low":0.0,"high":0.0,"method":"percentile bootstrap over question means"},"units":6,"resampling":{"unit":"question (repeats averaged first)","iterations":1000,"confidence_level":0.95}}],"commonModels":[{"model":"mock-free","configConsistent":true,"configFields":[],"indicators":[{"key":"answer_accuracy","label":"Answer accuracy (deterministic)","format":"rate","values":[0.5,0.5],"deltaAbs":0.0,"deltaRel":0.0},{"key":"json_schema_conformance","label":"JSON Schema conformance","format":"rate","values":[null,null],"deltaAbs":null,"deltaRel":null},{"key":"code_eval_pass_rate","label":"Code evaluation pass rate","format":"rate","values":[null,null],"deltaAbs":null,"deltaRel":null},{"key":"judge_score_mean","label":"Judge score (mean)","format":"score","values":[null,null],"deltaAbs":null,"deltaRel":null},{"key":"overall_pass_rate","label":"Overall pass rate","format":"rate","values":[0.5,0.5],"deltaAbs":0.0,"deltaRel":0.0},{"key":"success_rate","label":"Request success rate","format":"rate","values":[1.0,1.0],"deltaAbs":0.0,"deltaRel":0.0},{"key":"evaluation_coverage","label":"Evaluation coverage","format":"rate","values":[1.0,1.0],"deltaAbs":0.0,"deltaRel":0.0},{"key":"median_latency_ms","label":"Median generation latency (ms)","format":"ms","values":[25.79834996140562,25.79834996140562],"deltaAbs":0.0,"deltaRel":0.0},{"key":"p95_latency_ms","label":"P95 generation latency (ms)","format":"ms","values":[40.50130001269281,40.50130001269281],"deltaAbs":0.0,"deltaRel":0.0},{"key":"median_evaluation_ms","label":"Median evaluation latency (ms)","format":"ms","values":[0.05885001155547798,0.05885001155547798],"deltaAbs":0.0,"deltaRel":0.0},{"key":"median_total_ms","label":"Median total latency (ms)","format":"ms","values":[25.849799974821508,25.849799974821508],"deltaAbs":0.0,"deltaRel":0.0},{"key":"input_tokens","label":"Input tokens","format":"int","values":[96,96],"deltaAbs":0,"deltaRel":0.0},{"key":"output_tokens","label":"Output tokens","format":"int","values":[72,72],"deltaAbs":0,"deltaRel":0.0},{"key":"cost_usd","label":"Estimated cost (USD)","format":"cost","values":[null,null],"deltaAbs":null,"deltaRel":null}]},{"model":"mock-priced","configConsistent":true,"configFields":[],"indicators":[{"key":"answer_accuracy","label":"Answer accuracy (deterministic)","format":"rate","values":[0.5,0.5],"deltaAbs":0.0,"deltaRel":0.0},{"key":"json_schema_conformance","label":"JSON Schema conformance","format":"rate","values":[null,null],"deltaAbs":null,"deltaRel":null},{"key":"code_eval_pass_rate","label":"Code evaluation pass rate","format":"rate","values":[null,null],"deltaAbs":null,"deltaRel":null},{"key":"judge_score_mean","label":"Judge score (mean)","format":"score","values":[null,null],"deltaAbs":null,"deltaRel":null},{"key":"overall_pass_rate","label":"Overall pass rate","format":"rate","values":[0.5,0.5],"deltaAbs":0.0,"deltaRel":0.0},{"key":"success_rate","label":"Request success rate","format":"rate","values":[1.0,1.0],"deltaAbs":0.0,"deltaRel":0.0},{"key":"evaluation_coverage","label":"Evaluation coverage","format":"rate","values":[1.0,1.0],"deltaAbs":0.0,"deltaRel":0.0},{"key":"median_latency_ms","label":"Median generation latency (ms)","format":"ms","values":[32.05054998397827,32.05054998397827],"deltaAbs":0.0,"deltaRel":0.0},{"key":"p95_latency_ms","label":"P95 generation latency (ms)","format":"ms","values":[42.49720001826063,42.49720001826063],"deltaAbs":0.0,"deltaRel":0.0},{"key":"median_evaluation_ms","label":"Median evaluation latency (ms)","format":"ms","values":[0.05474998033605516,0.05474998033605516],"deltaAbs":0.0,"deltaRel":0.0},{"key":"median_total_ms","label":"Median total latency (ms)","format":"ms","values":[32.11379999993369,32.11379999993369],"deltaAbs":0.0,"deltaRel":0.0},{"key":"input_tokens","label":"Input tokens","format":"int","values":[96,96],"deltaAbs":0,"deltaRel":0.0},{"key":"output_tokens","label":"Output tokens","format":"int","values":[72,72],"deltaAbs":0,"deltaRel":0.0},{"key":"cost_usd","label":"Estimated cost (USD)","format":"cost","values":[0.000156,0.000156],"deltaAbs":0.0,"deltaRel":0.0}]}],"modelsOnlyIn":{}}</script>
+<script>
+"use strict";
+
+function h(tag, attrs, ...children) {
+  const node = document.createElement(tag);
+  for (const [key, value] of Object.entries(attrs || {})) {
+    if (value === null || value === undefined) continue;
+    if (key === "class") node.className = value;
+    else if (key === "text") node.textContent = value;
+    else if (key.startsWith("on")) node.addEventListener(key.slice(2), value);
+    else node.setAttribute(key, value);
+  }
+  for (const child of children) {
+    appendChild(node, child);
+  }
+  return node;
+}
+
+function appendChild(node, child) {
+  if (child === null || child === undefined) return;
+  if (Array.isArray(child)) {
+    for (const item of child) appendChild(node, item);
+    return;
+  }
+  node.append(child.nodeType ? child : document.createTextNode(child));
+}
+
+function fmtInt(value) {
+  return value === null || value === undefined ? "n/a" : value.toLocaleString("en-US");
+}
+
+function fmtRate(value) {
+  return value === null || value === undefined ? "n/a" : (value * 100).toFixed(1) + "%";
+}
+
+function fmtNumber(value) {
+  return value === null || value === undefined ? "n/a" : Number(value.toFixed(3)).toLocaleString("en-US");
+}
+
+function fmtIndicator(value, format) {
+  if (value === null || value === undefined) return "n/a";
+  if (format === "rate") return fmtRate(value);
+  if (format === "ms") return value.toFixed(1);
+  if (format === "cost") return value.toFixed(6);
+  return fmtInt(value);
+}
+
+function fmtDelta(value, format) {
+  if (value === null || value === undefined) return "n/a";
+  const sign = value > 0 ? "+" : "";
+  if (format === "rate") return `${sign}${(value * 100).toFixed(1)} pp`;
+  if (format === "ms") return `${sign}${value.toFixed(1)}`;
+  if (format === "cost") return `${sign}${value.toFixed(6)}`;
+  return `${sign}${fmtInt(value)}`;
+}
+
+function fmtRelative(value) {
+  if (value === null || value === undefined) return "n/a";
+  const sign = value > 0 ? "+" : "";
+  return `${sign}${(value * 100).toFixed(1)}%`;
+}
+
+const payload = JSON.parse(document.getElementById("report-data").textContent);
+const runs = payload.runs;
+const CHART_COLORS = ["c1", "c2", "c3", "c4", "c5", "c6", "c7", "c8"];
+
+function shortSha(sha) {
+  return typeof sha === "string" && sha.length > 12 ? sha.slice(0, 12) + "…" : sha;
+}
+
+function displayValue(value) {
+  if (value === null || value === undefined) return "n/a";
+  if (typeof value === "boolean") return String(value);
+  return String(value);
+}
+
+const RUN_FIELDS = [
+  ["label", "Run", false],
+  ["benchmark", "Benchmark", false],
+  ["created_at_utc", "Executed (UTC)", false],
+  ["minieval_version", "MiniEval version", true],
+  ["seed", "Seed", true],
+  ["repeats", "Repeats", true],
+  ["concurrency", "Concurrency", true],
+  ["shuffle", "Shuffle", true],
+  ["dataset_sha256", "Dataset sha256", true],
+  ["dataset_entries", "Entries", true],
+  ["path", "Location", false],
+];
+
+function renderRuns(section) {
+  section.append(
+    h("div", { class: "table-scroll" },
+      h("table", null,
+        h("thead", null,
+          h("tr", null, RUN_FIELDS.map(([key, label]) => h("th", { text: label }))),
+        ),
+        h("tbody", null,
+          runs.map((run) =>
+            h("tr", null,
+              RUN_FIELDS.map(([key, , warnOnDiff]) => {
+                const raw = key === "dataset_sha256" ? shortSha(run[key]) : displayValue(run[key]);
+                const differs = warnOnDiff && !runs.every((other) => String(other[key]) === String(run[key]));
+                return h("td", {
+                  class: (key === "repeats" || key === "concurrency" || key === "dataset_entries" ? "num " : "") + (differs ? "diff-cell" : ""),
+                  title: key === "dataset_sha256" ? run[key] : null,
+                  text: raw,
+                });
+              }),
+            ),
+          ),
+        ),
+      ),
+    ),
+    h("p", { class: "section-note", text: "Highlighted cells differ between the compared runs." }),
+  );
+}
+
+function renderWarnings(section) {
+  if (!payload.warnings || payload.warnings.length === 0) return;
+  section.append(
+    h("div", { class: "warning-box", role: "alert" },
+      h("strong", { text: "Read the comparison with care" }),
+      h("ul", null, payload.warnings.map((warning) => h("li", { text: warning }))),
+    ),
+  );
+}
+
+const CHART_INDICATORS = [
+  ["answer_accuracy", "Answer accuracy"],
+  ["overall_pass_rate", "Overall pass rate"],
+  ["success_rate", "Request success rate"],
+  ["median_latency_ms", "Median latency"],
+];
+
+function renderComparison(section) {
+  if (payload.commonModels.length === 0) {
+    section.append(h("p", { class: "empty-note", text: "No model is common to every run." }));
+    return;
+  }
+  let selected = CHART_INDICATORS[0][0];
+  const chartArea = h("div");
+
+  const drawChart = () => {
+    chartArea.replaceChildren(indicatorChart(selected));
+  };
+
+  const radios = h(
+    "fieldset",
+    null,
+    h("legend", { text: "Indicator" }),
+    h("div", { class: "radio-row" },
+      CHART_INDICATORS.map(([key, label]) =>
+        h("label", null,
+          h("input", {
+            type: "radio",
+            name: "compare-metric",
+            value: key,
+            checked: key === selected ? "" : null,
+            onchange: (event) => {
+              selected = event.target.value;
+              drawChart();
+            },
+          }),
+          label,
+        ),
+      ),
+    ),
+    h("div", { class: "legend" },
+      runs.map((run, index) =>
+        h("span", { class: "legend-item" },
+          h("span", { class: "legend-swatch", style: `background:var(--${CHART_COLORS[index % CHART_COLORS.length]})` }),
+          run.label,
+        ),
+      ),
+    ),
+    h("p", { class: "section-note", text: "One bar per run for each model; values below the bars." }),
+    chartArea,
+  );
+
+  section.append(radios, ...payload.commonModels.map(modelTables));
+  drawChart();
+}
+
+function indicatorChart(metricKey) {
+  const blocks = payload.commonModels.map((model) => {
+    const indicator = model.indicators.find((item) => item.key === metricKey);
+    const numeric = indicator.values.filter((value) => value !== null && value !== undefined);
+    const max = numeric.length ? Math.max(...numeric) : 0;
+    return h("div", { class: "multi-chart" },
+      h("h4", { text: model.model }),
+      h("div", { class: "chart-rows" },
+        runs.map((run, index) => {
+          const value = indicator.values[index];
+          return h("div", { class: "chart-row" },
+            h("span", { class: "row-label", text: run.label }),
+            h("div", { class: "track" },
+              value === null || value === undefined || max <= 0
+                ? null
+                : h("div", {
+                    class: "fill",
+                    style: `width:${Math.max(0.5, (value / max) * 100)}%;background:var(--${CHART_COLORS[index % CHART_COLORS.length]})`,
+                  }),
+            ),
+            h("span", { class: "row-value", text: fmtIndicator(value, indicator.format) }),
+          );
+        }),
+      ),
+    );
+  });
+  return h("div", null, blocks);
+}
+
+function modelTables(model) {
+  return h("div", null,
+    h("h3", { text: model.model }),
+    model.configConsistent
+      ? null
+      : h("p", {
+          class: "bar-note",
+          text: `Configuration differs across runs (${model.configFields.join(", ")}).`,
+        }),
+    h("div", { class: "table-scroll" },
+      h("table", null,
+        h("thead", null,
+          h("tr", null,
+            h("th", { text: "Indicator" }),
+            runs.map((run) => h("th", { text: run.label })),
+            h("th", { class: "num", text: "Δ (first → last)" }),
+            h("th", { class: "num", text: "Δ relative" }),
+          ),
+        ),
+        h("tbody", null,
+          model.indicators.map((indicator) =>
+            h("tr", null,
+              h("td", { text: indicator.label }),
+              indicator.values.map((value) =>
+                h("td", { class: "num", text: fmtIndicator(value, indicator.format) }),
+              ),
+              h("td", { class: "num " + deltaClass(indicator.deltaAbs), text: fmtDelta(indicator.deltaAbs, indicator.format) }),
+              h("td", { class: "num " + deltaClass(indicator.deltaRel), text: fmtRelative(indicator.deltaRel) }),
+            ),
+          ),
+        ),
+      ),
+    ),
+    h("p", {
+      class: "section-note",
+      text: "Relative change is shown only when the first value exists and is not zero; n/a marks values that are unavailable or not defined.",
+    }),
+  );
+}
+
+function deltaClass(value) {
+  if (value === null || value === undefined) return "delta-na";
+  if (value > 0) return "delta-up";
+  if (value < 0) return "delta-down";
+  return "delta-na";
+}
+
+function renderExclusives(section) {
+  const entries = Object.entries(payload.modelsOnlyIn || {});
+  if (entries.length === 0) {
+    section.append(h("p", { class: "empty-note", text: "Every model is present in all runs." }));
+    return;
+  }
+  section.append(
+    h("ul", null,
+      entries.map(([label, names]) =>
+        h("li", null,
+          h("span", { class: "mono", text: label }),
+          `: not comparable everywhere — ${names.join(", ")}`,
+        ),
+      ),
+    ),
+  );
+}
+
+function renderPaired(section) {
+  const paired = payload.paired || [];
+  if (paired.length === 0) {
+    section.append(
+      h("p", {
+        class: "empty-note",
+        text: "No paired statistics: they require exactly two runs over an identical dataset " +
+          "with at least one shared model and shared question ids.",
+      }),
+    );
+    return;
+  }
+  const last = runs[runs.length - 1].label;
+  const first = runs[0].label;
+  section.append(
+    h("p", {
+      class: "section-note",
+      text: `Per-question differences (${last} minus ${first}), repeats averaged first. ` +
+        "Differences are only computed on questions present in both runs; the interval is a " +
+        "bootstrap over question means and is not a significance test.",
+    }),
+    h("div", { class: "table-scroll" },
+      h("table", null,
+        h("thead", null,
+          h("tr", null,
+            ["Model", "Metric", "Questions", "Mean diff", "Median", "Std", "95% CI low",
+              "95% CI high"].map(
+              (label, index) => h("th", { class: index > 1 ? "num" : null, text: label }),
+            ),
+          ),
+        ),
+        h("tbody", null,
+          paired.map((entry) => {
+            const summary = entry.differences_summary;
+            const interval = entry.ci95;
+            const fmt = (value) =>
+              value === null || value === undefined ? "n/a" : value.toFixed(3);
+            return h("tr", null,
+              h("td", { class: "mono", text: entry.model }),
+              h("td", { text: entry.metric || "pass rate" }),
+              h("td", { class: "num", text: fmtInt(entry.units) }),
+              h("td", { class: "num", text: fmt(summary.mean) }),
+              h("td", { class: "num", text: fmt(summary.median) }),
+              h("td", { class: "num", text: fmt(summary.std) }),
+              h("td", { class: "num", text: fmt(interval.low) }),
+              h("td", { class: "num", text: fmt(interval.high) }),
+            );
+          }),
+        ),
+      ),
+    ),
+  );
+}
+
+function renderJudges(section) {
+  const judges = runs.map((run) => ({
+    label: run.label,
+    judge: run.judge,
+  }));
+  if (judges.every((item) => !item.judge)) {
+    section.append(h("p", { class: "empty-note", text: "No judge evaluation in any run." }));
+    return;
+  }
+  section.append(
+    h("div", { class: "table-scroll" },
+      h("table", null,
+        h("thead", null,
+          h("tr", null,
+            ["Run", "Judge provider", "Judge model", "Judgments per response",
+              "Rubric fingerprint"].map((label, index) =>
+              h("th", { class: index > 0 ? "num" : null, text: label }),
+            ),
+          ),
+        ),
+        h("tbody", null,
+          judges.map(({ label, judge }) =>
+            h("tr", null,
+              h("td", { class: "mono", text: label }),
+              h("td", { text: judge ? judge.provider : "n/a" }),
+              h("td", { class: "mono", text: judge && judge.model ? judge.model : "n/a" }),
+              h("td", { class: "num", text: judge ? fmtInt(judge.repeats) : "n/a" }),
+              h("td", {
+                class: "mono",
+                title: judge ? judge.rubric_fingerprint : "",
+                text: judge ? shortSha(judge.rubric_fingerprint) : "n/a",
+              }),
+            ),
+          ),
+        ),
+      ),
+    ),
+    h("p", {
+      class: "section-note",
+      text: "Subjective scores are only comparable across runs when the judge model, rubric " +
+        "fingerprint and criteria match; mismatches are also listed under Comparability.",
+    }),
+  );
+}
+
+const SECTIONS = [
+  ["runs", "Compared runs", renderRuns],
+  ["warnings", "Comparability", renderWarnings],
+  ["comparison", "Model comparison", renderComparison],
+  ["paired", "Paired differences", renderPaired],
+  ["judges", "Judge configuration", renderJudges],
+  ["exclusive", "Model coverage", renderExclusives],
+];
+
+function buildPage() {
+  const app = document.getElementById("app");
+  const nav = document.getElementById("section-nav");
+  for (const [id, title, render] of SECTIONS) {
+    nav.append(h("a", { href: "#" + id, text: title }));
+    const section = h("section", { id }, h("h2", { text: title }));
+    app.append(section);
+    render(section);
+  }
+}
+
+function setupThemeToggle() {
+  const root = document.documentElement;
+  const button = document.getElementById("theme-toggle");
+  const preferDark = window.matchMedia("(prefers-color-scheme: dark)").matches;
+  root.dataset.theme = preferDark ? "dark" : "light";
+  const syncLabel = () => {
+    button.textContent = root.dataset.theme === "dark" ? "Light theme" : "Dark theme";
+  };
+  button.addEventListener("click", () => {
+    root.dataset.theme = root.dataset.theme === "dark" ? "light" : "dark";
+    syncLabel();
+  });
+  syncLabel();
+}
+
+buildPage();
+setupThemeToggle();
+
+</script>
+</body>
+</html>

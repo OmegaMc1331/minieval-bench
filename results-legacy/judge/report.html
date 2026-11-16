@@ -1,0 +1,2185 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>MiniEval report</title>
+<style>
+:root {
+  --bg: #ffffff;
+  --surface: #f6f7f8;
+  --text: #1f2328;
+  --muted: #5f6368;
+  --border: #e3e5e8;
+  --accent: #2563eb;
+  --good: #15803d;
+  --bad: #b91c1c;
+  --warn: #b45309;
+  --mono: ui-monospace, "Cascadia Mono", "SF Mono", Consolas, Menlo, monospace;
+  --sans: -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+  --c1: #2563eb;
+  --c2: #059669;
+  --c3: #d97706;
+  --c4: #7c3aed;
+  --c5: #db2777;
+  --c6: #0891b2;
+  --c7: #64748b;
+  --c8: #65a30d;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --bg: #101317;
+    --surface: #181c22;
+    --text: #e6e8ea;
+    --muted: #9aa1ab;
+    --border: #2a2f37;
+    --accent: #60a5fa;
+    --good: #4ade80;
+    --bad: #f87171;
+    --warn: #fbbf24;
+    --c1: #60a5fa;
+    --c2: #34d399;
+    --c3: #fbbf24;
+    --c4: #a78bfa;
+    --c5: #f472b6;
+    --c6: #22d3ee;
+    --c7: #94a3b8;
+    --c8: #a3e635;
+  }
+}
+
+:root[data-theme="dark"] {
+  --bg: #101317;
+  --surface: #181c22;
+  --text: #e6e8ea;
+  --muted: #9aa1ab;
+  --border: #2a2f37;
+  --accent: #60a5fa;
+  --good: #4ade80;
+  --bad: #f87171;
+  --warn: #fbbf24;
+  --c1: #60a5fa;
+  --c2: #34d399;
+  --c3: #fbbf24;
+  --c4: #a78bfa;
+  --c5: #f472b6;
+  --c6: #22d3ee;
+  --c7: #94a3b8;
+  --c8: #a3e635;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+body {
+  margin: 0;
+  background: var(--bg);
+  color: var(--text);
+  font-family: var(--sans);
+  font-size: 15px;
+  line-height: 1.5;
+}
+
+.container {
+  max-width: 1080px;
+  margin: 0 auto;
+  padding: 0 20px 64px;
+}
+
+.topbar {
+  border-bottom: 1px solid var(--border);
+  background: var(--bg);
+  position: sticky;
+  top: 0;
+  z-index: 10;
+}
+
+.topbar-inner {
+  max-width: 1080px;
+  margin: 0 auto;
+  padding: 10px 20px;
+  display: flex;
+  align-items: center;
+  gap: 16px;
+}
+
+.brand {
+  font-weight: 600;
+  letter-spacing: 0.02em;
+  color: var(--text);
+  text-decoration: none;
+}
+
+.section-nav {
+  display: flex;
+  gap: 2px;
+  overflow-x: auto;
+  flex: 1;
+  white-space: nowrap;
+  -webkit-overflow-scrolling: touch;
+}
+
+.section-nav a {
+  color: var(--muted);
+  text-decoration: none;
+  font-size: 13px;
+  padding: 4px 10px;
+  border-radius: 4px;
+}
+
+.section-nav a:hover,
+.section-nav a:focus-visible {
+  color: var(--text);
+  background: var(--surface);
+}
+
+.theme-toggle {
+  font: inherit;
+  font-size: 13px;
+  color: var(--muted);
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  padding: 4px 12px;
+  cursor: pointer;
+  flex-shrink: 0;
+}
+
+.theme-toggle:hover {
+  color: var(--text);
+  border-color: var(--muted);
+}
+
+section {
+  margin-top: 48px;
+  scroll-margin-top: 64px;
+}
+
+h2 {
+  font-size: 19px;
+  font-weight: 600;
+  margin: 0 0 4px;
+}
+
+.section-note {
+  color: var(--muted);
+  font-size: 13px;
+  margin: 0 0 16px;
+}
+
+h3 {
+  font-size: 15px;
+  font-weight: 600;
+  margin: 28px 0 10px;
+}
+
+code,
+.mono {
+  font-family: var(--mono);
+  font-size: 0.92em;
+}
+
+dl.facts {
+  display: grid;
+  grid-template-columns: max-content 1fr;
+  gap: 6px 24px;
+  margin: 0;
+}
+
+dl.facts dt {
+  color: var(--muted);
+  font-size: 13px;
+  align-self: baseline;
+}
+
+dl.facts dd {
+  margin: 0;
+  font-family: var(--mono);
+  font-size: 13px;
+  overflow-wrap: anywhere;
+}
+
+.table-scroll {
+  overflow-x: auto;
+}
+
+table {
+  border-collapse: collapse;
+  width: 100%;
+  font-size: 13.5px;
+}
+
+th,
+td {
+  text-align: left;
+  padding: 7px 10px;
+  border-bottom: 1px solid var(--border);
+  vertical-align: top;
+}
+
+th {
+  color: var(--muted);
+  font-weight: 500;
+  font-size: 12.5px;
+  white-space: nowrap;
+}
+
+th button {
+  font: inherit;
+  color: inherit;
+  background: none;
+  border: none;
+  padding: 0;
+  cursor: pointer;
+}
+
+th button:hover {
+  color: var(--text);
+}
+
+th .sort-arrow {
+  display: inline-block;
+  width: 1em;
+}
+
+td.num,
+th.num {
+  text-align: right;
+  font-family: var(--mono);
+  white-space: nowrap;
+}
+
+td.na {
+  color: var(--muted);
+}
+
+.status-ok {
+  color: var(--good);
+}
+
+.status-failed {
+  color: var(--bad);
+}
+
+.eval-pass {
+  color: var(--good);
+}
+
+.eval-fail {
+  color: var(--bad);
+}
+
+.eval-na {
+  color: var(--muted);
+}
+
+.toolbar {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  align-items: center;
+  margin-bottom: 12px;
+}
+
+.toolbar label {
+  color: var(--muted);
+  font-size: 12.5px;
+}
+
+input[type="text"],
+select {
+  font: inherit;
+  font-size: 13px;
+  color: var(--text);
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  padding: 5px 8px;
+}
+
+input[type="text"]:focus-visible,
+select:focus-visible,
+button:focus-visible,
+a:focus-visible,
+[tabindex="0"]:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 1px;
+}
+
+input[type="checkbox"] {
+  accent-color: var(--accent);
+}
+
+fieldset {
+  border: none;
+  padding: 0;
+  margin: 0;
+}
+
+legend {
+  color: var(--muted);
+  font-size: 12.5px;
+  padding: 0;
+  margin-bottom: 6px;
+}
+
+.radio-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 14px;
+  margin-bottom: 14px;
+  font-size: 13.5px;
+}
+
+.radio-row label {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+}
+
+.chart-rows {
+  display: grid;
+  gap: 8px;
+}
+
+.chart-row {
+  display: grid;
+  grid-template-columns: 170px 1fr max-content;
+  gap: 12px;
+  align-items: center;
+}
+
+.chart-row .row-label {
+  font-family: var(--mono);
+  font-size: 12.5px;
+  overflow-wrap: anywhere;
+}
+
+.chart-row .row-value {
+  font-family: var(--mono);
+  font-size: 12.5px;
+  color: var(--muted);
+  white-space: nowrap;
+}
+
+.track {
+  background: var(--surface);
+  border-radius: 3px;
+  height: 16px;
+  display: flex;
+  overflow: hidden;
+}
+
+.track .fill {
+  height: 100%;
+}
+
+.track .fill.partial {
+  background-image: repeating-linear-gradient(
+    45deg,
+    transparent 0,
+    transparent 5px,
+    rgba(127, 127, 127, 0.35) 5px,
+    rgba(127, 127, 127, 0.35) 7px
+  );
+}
+
+.segment {
+  height: 100%;
+  min-width: 1px;
+}
+
+.bar-note {
+  font-size: 11.5px;
+  color: var(--warn);
+  font-family: var(--mono);
+}
+
+.histogram {
+  display: flex;
+  align-items: flex-end;
+  gap: 2px;
+  height: 110px;
+  margin: 8px 0 4px;
+}
+
+.histogram .bin {
+  flex: 1;
+  background: var(--c1);
+  border-radius: 2px 2px 0 0;
+  min-height: 1px;
+}
+
+.histogram .bin:hover,
+.histogram .bin:focus-visible {
+  background: var(--accent);
+}
+
+.histogram-axis {
+  display: flex;
+  justify-content: space-between;
+  color: var(--muted);
+  font-size: 11.5px;
+  font-family: var(--mono);
+}
+
+.multi-chart {
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 14px 16px;
+  margin-bottom: 14px;
+}
+
+.multi-chart h4 {
+  margin: 0 0 4px;
+  font-size: 13.5px;
+  font-family: var(--mono);
+  font-weight: 600;
+}
+
+.multi-chart .sub {
+  color: var(--muted);
+  font-size: 12px;
+  margin: 0 0 8px;
+}
+
+.legend {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px 16px;
+  margin: 10px 0 0;
+  font-size: 12.5px;
+}
+
+.legend-item {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.legend-swatch {
+  width: 10px;
+  height: 10px;
+  border-radius: 2px;
+  flex-shrink: 0;
+}
+
+details.data-details {
+  margin-top: 12px;
+  font-size: 13px;
+}
+
+details.data-details summary {
+  color: var(--muted);
+  cursor: pointer;
+}
+
+details.data-details table {
+  margin-top: 8px;
+}
+
+.warning-box {
+  border-left: 3px solid var(--warn);
+  background: var(--surface);
+  padding: 10px 14px;
+  margin: 12px 0;
+  font-size: 13.5px;
+}
+
+.warning-box ul {
+  margin: 6px 0 0;
+  padding-left: 20px;
+}
+
+.empty-note {
+  color: var(--muted);
+  font-size: 13.5px;
+  padding: 12px 0;
+}
+
+.trial-detail {
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  margin: 12px 0;
+  padding: 14px 16px;
+}
+
+.trial-detail header {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  gap: 12px;
+  margin-bottom: 8px;
+}
+
+.trial-detail header h4 {
+  font-family: var(--mono);
+  font-size: 13.5px;
+  margin: 0;
+  overflow-wrap: anywhere;
+}
+
+.trial-detail pre {
+  background: var(--surface);
+  border-radius: 4px;
+  padding: 10px 12px;
+  margin: 6px 0 0;
+  font-family: var(--mono);
+  font-size: 12.5px;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  max-height: 300px;
+  overflow-y: auto;
+}
+
+.trial-detail .field-label {
+  color: var(--muted);
+  font-size: 12px;
+  margin-top: 12px;
+}
+
+.pagination {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-top: 12px;
+  font-size: 13px;
+  color: var(--muted);
+}
+
+.pagination button {
+  font: inherit;
+  font-size: 13px;
+  border: 1px solid var(--border);
+  background: var(--bg);
+  color: var(--text);
+  border-radius: 4px;
+  padding: 4px 12px;
+  cursor: pointer;
+}
+
+.pagination button:disabled {
+  opacity: 0.45;
+  cursor: default;
+}
+
+.result-count {
+  color: var(--muted);
+  font-size: 12.5px;
+  margin-left: auto;
+}
+
+.delta-up {
+  color: var(--good);
+}
+
+.delta-down {
+  color: var(--bad);
+}
+
+.delta-na {
+  color: var(--muted);
+}
+
+.pair-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 14px;
+}
+
+.pair-grid pre {
+  background: var(--surface);
+  border-radius: 4px;
+  padding: 10px 12px;
+  margin: 4px 0 0;
+  font-family: var(--mono);
+  font-size: 12.5px;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  max-height: 220px;
+  overflow-y: auto;
+}
+
+.pair-grid .sub {
+  color: var(--muted);
+  font-size: 12px;
+  margin: 0;
+}
+
+.judgment-list {
+  margin: 10px 0 0;
+  padding-left: 20px;
+  font-size: 13px;
+}
+
+.criteria-table td.mono {
+  white-space: nowrap;
+}
+
+.score-bar-note {
+  color: var(--muted);
+  font-size: 12px;
+}
+
+@media (max-width: 720px) {
+  .pair-grid {
+    grid-template-columns: 1fr;
+  }
+}
+
+.diff-cell {
+  background: var(--surface);
+}
+
+@media (max-width: 720px) {
+  .chart-row {
+    grid-template-columns: 1fr;
+    gap: 4px;
+  }
+
+  .chart-row .row-value {
+    justify-self: end;
+  }
+
+  .toolbar {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .toolbar input[type="text"],
+  .toolbar select {
+    width: 100%;
+  }
+
+  dl.facts {
+    grid-template-columns: 1fr;
+    gap: 2px;
+  }
+
+  dl.facts dd {
+    margin-bottom: 8px;
+  }
+}
+
+</style>
+</head>
+<body>
+<header class="topbar">
+  <div class="topbar-inner">
+    <a class="brand" href="#overview">MiniEval</a>
+    <nav id="section-nav" class="section-nav" aria-label="Report sections"></nav>
+    <button id="theme-toggle" class="theme-toggle" type="button">Theme</button>
+  </div>
+</header>
+<main id="app" class="container">
+  <noscript>
+    <p>JavaScript is disabled. The interactive sections of this report, including the
+    trial explorer and the charts, need JavaScript to render.</p>
+  </noscript>
+</main>
+<script id="report-data" type="application/json">{"kind":"run","manifest":{"minieval_version":"0.4.0","benchmark":"judge-mock-demo","created_at_utc":"2026-11-16T21:46:21.007959+00:00","seed":42,"repeats":2,"concurrency":2,"dataset_path":"D:\\MiniEval\\datasets\\judge-mock.jsonl","dataset_sha256":"4e10ca91c866af284a04ecfdaf89a20fdffb9affa385e6c2955a0828c2937175","dataset_entries":3,"models":[{"name":"mock-candidate","provider":"mock","model":"mock-candidate","temperature":null,"max_tokens":null,"timeout":60.0,"drop_params":false,"input_cost_per_1m":null,"output_cost_per_1m":null},{"name":"mock-priced","provider":"mock","model":"mock-priced","temperature":null,"max_tokens":null,"timeout":60.0,"drop_params":false,"input_cost_per_1m":0.5,"output_cost_per_1m":1.5}],"duration_seconds":0.1904083999688737,"trial_seeds":[1416840650,64878673],"shuffle":false,"evaluators":{"judge":{"provider":"mock","model":null,"temperature":0.0,"max_tokens":null,"timeout":null,"repeats":2,"rubric":"D:\\MiniEval\\rubrics\\general.yaml","calibration":null,"max_calls":null,"budget_usd":null,"input_cost_per_1m":0.5,"output_cost_per_1m":1.5},"code":null},"statistics":{"bootstrap_iterations":1000,"confidence_level":0.95},"judge":{"provider":"mock","model":null,"repeats":2,"rubric_fingerprint":"f03734ad82f3965c3bf07136c7365018625b56f074925f065000cbcf8a099bf0","rubric_version":1,"criteria":[{"id":"correctness","scale_min":1.0,"scale_max":5.0,"weight":2.0},{"id":"relevance","scale_min":1.0,"scale_max":5.0,"weight":1.0},{"id":"instruction_following","scale_min":1.0,"scale_max":5.0,"weight":1.0},{"id":"clarity","scale_min":1.0,"scale_max":5.0,"weight":1.0}]},"source_run":null,"reevaluation":null},"models":["mock-candidate","mock-priced"],"entryIds":["capital-1","open-1","sum-1"],"errorTypes":[],"stats":[{"model":"mock-candidate","requests":6,"succeeded":6,"failed":0,"success_rate":1.0,"evaluable":0,"passed":0,"score":null,"median_latency_ms":30.786100047407672,"p95_latency_ms":43.39030000846833,"median_evaluation_ms":0.6453499954659492,"median_total_ms":31.502050056587905,"input_tokens":48,"output_tokens":24,"cost_usd":null,"errors":{},"answer_accuracy":null,"evaluation_coverage":0.0,"overall_pass_rate":0.0,"incorrect":0,"median_queue_ms":31.27969999331981,"input_tokens_reported":6,"output_tokens_reported":6,"cost_reported":0,"evaluator_failed":0,"evaluator_unavailable":0,"evaluation_input_tokens":96,"evaluation_output_tokens":384,"evaluation_cost_usd":0.000624,"evaluation_cost_reported":6,"deterministic_trials":0,"json_schema_conformance":null,"json_schema_trials":0,"code_eval_pass_rate":null,"code_eval_trials":0,"code_tests_passed":null,"code_tests_total":null,"judge_score_mean":0.48333333333333334,"judge_evaluations":6,"judge_trials":6},{"model":"mock-priced","requests":6,"succeeded":6,"failed":0,"success_rate":1.0,"evaluable":0,"passed":0,"score":null,"median_latency_ms":32.89919998496771,"p95_latency_ms":40.8121999935247,"median_evaluation_ms":0.48684998182579875,"median_total_ms":33.38604996679351,"input_tokens":48,"output_tokens":24,"cost_usd":5.9999999999999995e-05,"errors":{},"answer_accuracy":null,"evaluation_coverage":0.0,"overall_pass_rate":0.0,"incorrect":0,"median_queue_ms":123.503749986412,"input_tokens_reported":6,"output_tokens_reported":6,"cost_reported":6,"evaluator_failed":0,"evaluator_unavailable":0,"evaluation_input_tokens":96,"evaluation_output_tokens":384,"evaluation_cost_usd":0.000624,"evaluation_cost_reported":6,"deterministic_trials":0,"json_schema_conformance":null,"json_schema_trials":0,"code_eval_pass_rate":null,"code_eval_trials":0,"code_tests_passed":null,"code_tests_total":null,"judge_score_mean":0.4708333333333333,"judge_evaluations":6,"judge_trials":6}],"trials":[[0,0,0,true,null,16.24,28.598,5,4,null,null,16.24,0.521,16.76],[0,0,1,true,null,43.39,33.962,5,4,null,null,43.39,0.665,44.056],[0,1,0,true,null,24.546,45.36,9,4,null,null,24.546,0.832,25.379],[0,1,1,true,null,40.592,70.83,9,4,null,null,40.592,0.433,41.025],[0,2,0,true,null,28.205,1.453,10,4,null,null,28.205,0.806,29.012],[0,2,1,true,null,33.367,0.355,10,4,null,null,33.367,0.625,33.992],[1,0,0,true,null,38.647,118.964,5,4,8.5e-06,null,38.647,0.505,39.152],[1,0,1,true,null,6.137,128.043,5,4,8.5e-06,null,6.137,0.437,6.573],[1,1,0,true,null,40.812,134.648,9,4,1.05e-05,null,40.812,0.421,41.233],[1,1,1,true,null,27.151,158.118,9,4,1.05e-05,null,27.151,0.469,27.62],[1,2,0,true,null,39.533,78.081,10,4,1.1e-05,null,39.533,1.008,40.541],[1,2,1,true,null,15.298,111.878,10,4,1.1e-05,null,15.298,0.794,16.092]],"responses":["mock-ec9bf7c6","mock-4f0eb5fc","mock-111b4a61","mock-4173a0cf","mock-2e07ec7c","mock-9fa4cf9e","mock-83398bde","mock-d7c9d34a","mock-509bb32d","mock-a4c66401","mock-63aacde8","mock-8ff2ad61"],"errorMessages":[null,null,null,null,null,null,null,null,null,null,null,null],"evaluations":[{"evaluator":"judge","status":"completed","passed":null,"score":0.7,"verdict":null,"details":{"judge_model":"mock-judge","rubric_fingerprint":"f03734ad82f3965c3bf07136c7365018625b56f074925f065000cbcf8a099bf0","rubric_version":1,"judgments":2,"judge_failures":0,"judge_failure_examples":[],"usage":{"calls":2,"responses":2,"valid_verdicts":2,"invalid_verdicts":0,"network_errors":0,"retries":0,"cost_known_calls":2},"criteria":{"correctness":{"mean":4.0,"std":1.4142135623730951,"scale":[1.0,5.0]},"relevance":{"mean":3.0,"std":2.8284271247461903,"scale":[1.0,5.0]},"instruction_following":{"mean":3.0,"std":1.4142135623730951,"scale":[1.0,5.0]},"clarity":{"mean":5.0,"std":0.0,"scale":[1.0,5.0]}},"reason":"deterministic mock judgment","overall_std":0.35355339059327373},"error_message":null,"input_tokens":10,"output_tokens":64,"cost_usd":0.000101},{"evaluator":"judge","status":"completed","passed":null,"score":0.32499999999999996,"verdict":null,"details":{"judge_model":"mock-judge","rubric_fingerprint":"f03734ad82f3965c3bf07136c7365018625b56f074925f065000cbcf8a099bf0","rubric_version":1,"judgments":2,"judge_failures":0,"judge_failure_examples":[],"usage":{"calls":2,"responses":2,"valid_verdicts":2,"invalid_verdicts":0,"network_errors":0,"retries":0,"cost_known_calls":2},"criteria":{"correctness":{"mean":2.0,"std":0.0,"scale":[1.0,5.0]},"relevance":{"mean":2.0,"std":0.0,"scale":[1.0,5.0]},"instruction_following":{"mean":2.5,"std":0.7071067811865476,"scale":[1.0,5.0]},"clarity":{"mean":3.0,"std":0.0,"scale":[1.0,5.0]}},"reason":"deterministic mock judgment","overall_std":0.03535533905932737},"error_message":null,"input_tokens":10,"output_tokens":64,"cost_usd":0.000101},{"evaluator":"judge","status":"completed","passed":null,"score":0.625,"verdict":null,"details":{"judge_model":"mock-judge","rubric_fingerprint":"f03734ad82f3965c3bf07136c7365018625b56f074925f065000cbcf8a099bf0","rubric_version":1,"judgments":2,"judge_failures":0,"judge_failure_examples":[],"usage":{"calls":2,"responses":2,"valid_verdicts":2,"invalid_verdicts":0,"network_errors":0,"retries":0,"cost_known_calls":2},"criteria":{"correctness":{"mean":3.5,"std":0.7071067811865476,"scale":[1.0,5.0]},"relevance":{"mean":4.5,"std":0.7071067811865476,"scale":[1.0,5.0]},"instruction_following":{"mean":3.5,"std":2.1213203435596424,"scale":[1.0,5.0]},"clarity":{"mean":2.5,"std":0.7071067811865476,"scale":[1.0,5.0]}},"reason":"deterministic mock judgment","overall_std":0.03535533905932741},"error_message":null,"input_tokens":18,"output_tokens":64,"cost_usd":0.000105},{"evaluator":"judge","status":"completed","passed":null,"score":0.275,"verdict":null,"details":{"judge_model":"mock-judge","rubric_fingerprint":"f03734ad82f3965c3bf07136c7365018625b56f074925f065000cbcf8a099bf0","rubric_version":1,"judgments":2,"judge_failures":0,"judge_failure_examples":[],"usage":{"calls":2,"responses":2,"valid_verdicts":2,"invalid_verdicts":0,"network_errors":0,"retries":0,"cost_known_calls":2},"criteria":{"correctness":{"mean":2.5,"std":2.1213203435596424,"scale":[1.0,5.0]},"relevance":{"mean":1.5,"std":0.7071067811865476,"scale":[1.0,5.0]},"instruction_following":{"mean":3.0,"std":1.4142135623730951,"scale":[1.0,5.0]},"clarity":{"mean":1.0,"std":0.0,"scale":[1.0,5.0]}},"reason":"deterministic mock judgment","overall_std":0.1060660171779821},"error_message":null,"input_tokens":18,"output_tokens":64,"cost_usd":0.000105},{"evaluator":"judge","status":"completed","passed":null,"score":0.35000000000000003,"verdict":null,"details":{"judge_model":"mock-judge","rubric_fingerprint":"f03734ad82f3965c3bf07136c7365018625b56f074925f065000cbcf8a099bf0","rubric_version":1,"judgments":2,"judge_failures":0,"judge_failure_examples":[],"usage":{"calls":2,"responses":2,"valid_verdicts":2,"invalid_verdicts":0,"network_errors":0,"retries":0,"cost_known_calls":2},"criteria":{"correctness":{"mean":1.5,"std":0.7071067811865476,"scale":[1.0,5.0]},"relevance":{"mean":3.0,"std":2.8284271247461903,"scale":[1.0,5.0]},"instruction_following":{"mean":3.5,"std":2.1213203435596424,"scale":[1.0,5.0]},"clarity":{"mean":2.5,"std":2.1213203435596424,"scale":[1.0,5.0]}},"reason":"deterministic mock judgment","overall_std":0.4242640687119285},"error_message":null,"input_tokens":20,"output_tokens":64,"cost_usd":0.000106},{"evaluator":"judge","status":"completed","passed":null,"score":0.625,"verdict":null,"details":{"judge_model":"mock-judge","rubric_fingerprint":"f03734ad82f3965c3bf07136c7365018625b56f074925f065000cbcf8a099bf0","rubric_version":1,"judgments":2,"judge_failures":0,"judge_failure_examples":[],"usage":{"calls":2,"responses":2,"valid_verdicts":2,"invalid_verdicts":0,"network_errors":0,"retries":0,"cost_known_calls":2},"criteria":{"correctness":{"mean":3.0,"std":0.0,"scale":[1.0,5.0]},"relevance":{"mean":3.0,"std":1.4142135623730951,"scale":[1.0,5.0]},"instruction_following":{"mean":5.0,"std":0.0,"scale":[1.0,5.0]},"clarity":{"mean":3.5,"std":2.1213203435596424,"scale":[1.0,5.0]}},"reason":"deterministic mock judgment","overall_std":0.03535533905932741},"error_message":null,"input_tokens":20,"output_tokens":64,"cost_usd":0.000106},{"evaluator":"judge","status":"completed","passed":null,"score":0.3,"verdict":null,"details":{"judge_model":"mock-judge","rubric_fingerprint":"f03734ad82f3965c3bf07136c7365018625b56f074925f065000cbcf8a099bf0","rubric_version":1,"judgments":2,"judge_failures":0,"judge_failure_examples":[],"usage":{"calls":2,"responses":2,"valid_verdicts":2,"invalid_verdicts":0,"network_errors":0,"retries":0,"cost_known_calls":2},"criteria":{"correctness":{"mean":3.0,"std":2.8284271247461903,"scale":[1.0,5.0]},"relevance":{"mean":1.5,"std":0.7071067811865476,"scale":[1.0,5.0]},"instruction_following":{"mean":2.0,"std":0.0,"scale":[1.0,5.0]},"clarity":{"mean":1.5,"std":0.7071067811865476,"scale":[1.0,5.0]}},"reason":"deterministic mock judgment","overall_std":0.282842712474619},"error_message":null,"input_tokens":10,"output_tokens":64,"cost_usd":0.000101},{"evaluator":"judge","status":"completed","passed":null,"score":0.35000000000000003,"verdict":null,"details":{"judge_model":"mock-judge","rubric_fingerprint":"f03734ad82f3965c3bf07136c7365018625b56f074925f065000cbcf8a099bf0","rubric_version":1,"judgments":2,"judge_failures":0,"judge_failure_examples":[],"usage":{"calls":2,"responses":2,"valid_verdicts":2,"invalid_verdicts":0,"network_errors":0,"retries":0,"cost_known_calls":2},"criteria":{"correctness":{"mean":2.5,"std":2.1213203435596424,"scale":[1.0,5.0]},"relevance":{"mean":1.5,"std":0.7071067811865476,"scale":[1.0,5.0]},"instruction_following":{"mean":4.0,"std":0.0,"scale":[1.0,5.0]},"clarity":{"mean":1.5,"std":0.7071067811865476,"scale":[1.0,5.0]}},"reason":"deterministic mock judgment","overall_std":0.28284271247461906},"error_message":null,"input_tokens":10,"output_tokens":64,"cost_usd":0.000101},{"evaluator":"judge","status":"completed","passed":null,"score":0.575,"verdict":null,"details":{"judge_model":"mock-judge","rubric_fingerprint":"f03734ad82f3965c3bf07136c7365018625b56f074925f065000cbcf8a099bf0","rubric_version":1,"judgments":2,"judge_failures":0,"judge_failure_examples":[],"usage":{"calls":2,"responses":2,"valid_verdicts":2,"invalid_verdicts":0,"network_errors":0,"retries":0,"cost_known_calls":2},"criteria":{"correctness":{"mean":3.0,"std":0.0,"scale":[1.0,5.0]},"relevance":{"mean":4.0,"std":0.0,"scale":[1.0,5.0]},"instruction_following":{"mean":2.5,"std":0.7071067811865476,"scale":[1.0,5.0]},"clarity":{"mean":4.0,"std":1.4142135623730951,"scale":[1.0,5.0]}},"reason":"deterministic mock judgment","overall_std":0.03535533905932733},"error_message":null,"input_tokens":18,"output_tokens":64,"cost_usd":0.000105},{"evaluator":"judge","status":"completed","passed":null,"score":0.6,"verdict":null,"details":{"judge_model":"mock-judge","rubric_fingerprint":"f03734ad82f3965c3bf07136c7365018625b56f074925f065000cbcf8a099bf0","rubric_version":1,"judgments":2,"judge_failures":0,"judge_failure_examples":[],"usage":{"calls":2,"responses":2,"valid_verdicts":2,"invalid_verdicts":0,"network_errors":0,"retries":0,"cost_known_calls":2},"criteria":{"correctness":{"mean":3.0,"std":2.8284271247461903,"scale":[1.0,5.0]},"relevance":{"mean":3.0,"std":2.8284271247461903,"scale":[1.0,5.0]},"instruction_following":{"mean":3.0,"std":0.0,"scale":[1.0,5.0]},"clarity":{"mean":5.0,"std":0.0,"scale":[1.0,5.0]}},"reason":"deterministic mock judgment","overall_std":0.42426406871192857},"error_message":null,"input_tokens":18,"output_tokens":64,"cost_usd":0.000105},{"evaluator":"judge","status":"completed","passed":null,"score":0.45,"verdict":null,"details":{"judge_model":"mock-judge","rubric_fingerprint":"f03734ad82f3965c3bf07136c7365018625b56f074925f065000cbcf8a099bf0","rubric_version":1,"judgments":2,"judge_failures":0,"judge_failure_examples":[],"usage":{"calls":2,"responses":2,"valid_verdicts":2,"invalid_verdicts":0,"network_errors":0,"retries":0,"cost_known_calls":2},"criteria":{"correctness":{"mean":2.0,"std":0.0,"scale":[1.0,5.0]},"relevance":{"mean":2.0,"std":1.4142135623730951,"scale":[1.0,5.0]},"instruction_following":{"mean":4.0,"std":1.4142135623730951,"scale":[1.0,5.0]},"clarity":{"mean":4.0,"std":1.4142135623730951,"scale":[1.0,5.0]}},"reason":"deterministic mock judgment","overall_std":0.07071067811865474},"error_message":null,"input_tokens":20,"output_tokens":64,"cost_usd":0.000106},{"evaluator":"judge","status":"completed","passed":null,"score":0.55,"verdict":null,"details":{"judge_model":"mock-judge","rubric_fingerprint":"f03734ad82f3965c3bf07136c7365018625b56f074925f065000cbcf8a099bf0","rubric_version":1,"judgments":2,"judge_failures":0,"judge_failure_examples":[],"usage":{"calls":2,"responses":2,"valid_verdicts":2,"invalid_verdicts":0,"network_errors":0,"retries":0,"cost_known_calls":2},"criteria":{"correctness":{"mean":3.0,"std":0.0,"scale":[1.0,5.0]},"relevance":{"mean":3.5,"std":0.7071067811865476,"scale":[1.0,5.0]},"instruction_following":{"mean":5.0,"std":0.0,"scale":[1.0,5.0]},"clarity":{"mean":1.5,"std":0.7071067811865476,"scale":[1.0,5.0]}},"reason":"deterministic mock judgment","overall_std":0.07071067811865474},"error_message":null,"input_tokens":20,"output_tokens":64,"cost_usd":0.000106}],"dataset":null,"statistics":[{"model":"mock-candidate","pass_rate":{"summary":{"mean":null,"median":null,"std":null,"min":null,"max":null,"count":0},"ci95":{"low":null,"high":null,"method":"percentile bootstrap over question means"},"units":0,"excluded_questions":["capital-1","open-1","sum-1"],"conditional_on":"evaluated trials only; failed requests and unavailable evaluations are excluded from the interval"},"latency_ms":{"summary":{"mean":31.056666688527912,"median":30.786100047407672,"std":1.3967940835395434,"min":29.81495001586154,"max":32.56895000231452,"count":3},"ci95":{"low":29.81495001586154,"high":32.56895000231452,"method":"percentile bootstrap over question means"},"units":3},"judge_score":{"summary":{"mean":0.48333333333333334,"median":0.48750000000000004,"std":0.03145764348029477,"min":0.45,"max":0.5125,"count":3},"ci95":{"low":0.45,"high":0.5125,"method":"percentile bootstrap over question means"},"units":3},"resampling":{"unit":"question (repeats averaged first)","iterations":1000,"confidence_level":0.95,"note":"intervals describe sampling variability across questions; they do not establish statistical significance"}},{"model":"mock-priced","pass_rate":{"summary":{"mean":null,"median":null,"std":null,"min":null,"max":null,"count":0},"ci95":{"low":null,"high":null,"method":"percentile bootstrap over question means"},"units":0,"excluded_questions":["capital-1","open-1","sum-1"],"conditional_on":"evaluated trials only; failed requests and unavailable evaluations are excluded from the interval"},"latency_ms":{"summary":{"mean":27.929749989804503,"median":27.415649994509295,"std":5.812077869142715,"min":22.391799982869998,"max":33.98179999203421,"count":3},"ci95":{"low":22.391799982869998,"high":33.98179999203421,"method":"percentile bootstrap over question means"},"units":3},"judge_score":{"summary":{"mean":0.4708333333333333,"median":0.5,"std":0.1336584577695453,"min":0.325,"max":0.5874999999999999,"count":3},"ci95":{"low":0.325,"high":0.5874999999999999,"method":"percentile bootstrap over question means"},"units":3},"resampling":{"unit":"question (repeats averaged first)","iterations":1000,"confidence_level":0.95,"note":"intervals describe sampling variability across questions; they do not establish statistical significance"}}],"evaluatorSummaries":[{"evaluator":"judge","trials":12,"completed":12,"passed":0,"failed_binary":0,"evaluator_failed":0,"evaluator_unavailable":0,"binary_pass_rate":null,"mean_score":0.4770833333333333,"score_count":12,"input_tokens":192,"output_tokens":768,"cost_usd":0.001248}],"evaluatorsByModel":[{"model":"mock-candidate","evaluator":"judge","trials":6,"completed":6,"passed":0,"binary":0,"binary_pass_rate":null,"mean_score":0.48333333333333334,"score_count":6},{"model":"mock-priced","evaluator":"judge","trials":6,"completed":6,"passed":0,"binary":0,"binary_pass_rate":null,"mean_score":0.4708333333333333,"score_count":6}]}</script>
+<script>
+"use strict";
+
+function h(tag, attrs, ...children) {
+  const node = document.createElement(tag);
+  for (const [key, value] of Object.entries(attrs || {})) {
+    if (value === null || value === undefined) continue;
+    if (key === "class") node.className = value;
+    else if (key === "text") node.textContent = value;
+    else if (key.startsWith("on")) node.addEventListener(key.slice(2), value);
+    else node.setAttribute(key, value);
+  }
+  for (const child of children) {
+    appendChild(node, child);
+  }
+  return node;
+}
+
+function appendChild(node, child) {
+  if (child === null || child === undefined) return;
+  if (Array.isArray(child)) {
+    for (const item of child) appendChild(node, item);
+    return;
+  }
+  node.append(child.nodeType ? child : document.createTextNode(child));
+}
+
+function fmtInt(value) {
+  return value === null || value === undefined ? "n/a" : value.toLocaleString("en-US");
+}
+
+function fmtRate(value) {
+  return value === null || value === undefined ? "n/a" : (value * 100).toFixed(1) + "%";
+}
+
+function fmtMs(value) {
+  return value === null || value === undefined ? "n/a" : value.toFixed(1);
+}
+
+function fmtCost(value) {
+  return value === null || value === undefined ? "n/a" : value.toFixed(6);
+}
+
+const payload = JSON.parse(document.getElementById("report-data").textContent);
+const stats = payload.stats || [];
+const manifest = payload.manifest || {};
+const evaluations = payload.evaluations || [];
+
+const trials = (payload.trials || []).map((row, index) => ({
+  model: payload.models[row[0]],
+  entryId: payload.entryIds[row[1]],
+  repeat: row[2],
+  ok: row[3],
+  passed: row[4],
+  latencyMs: row[5],
+  queueMs: row[6],
+  inputTokens: row[7],
+  outputTokens: row[8],
+  costUsd: row[9],
+  errorType: row[10] === null ? null : payload.errorTypes[row[10]],
+  generationMs: row.length > 11 ? row[11] : null,
+  evaluationMs: row.length > 12 ? row[12] : null,
+  totalMs: row.length > 13 ? row[13] : null,
+  response: payload.responses[index],
+  errorMessage: payload.errorMessages[index],
+  evaluation: evaluations[index] || null,
+}));
+
+const legacyLatencyRun = trials.length > 0
+  && trials.every((trial) => trial.generationMs === null || trial.generationMs === undefined);
+
+function generationLatency(trial) {
+  return trial.generationMs === null || trial.generationMs === undefined
+    ? trial.latencyMs
+    : trial.generationMs;
+}
+
+const hasEvaluator = (name) => evaluations.some((item) => item && item.evaluator === name);
+const judgeTrials = trials.filter(
+  (trial) => trial.evaluation && trial.evaluation.evaluator === "judge",
+);
+
+const datasetById = payload.dataset
+  ? Object.fromEntries(payload.dataset.map((entry) => [entry.id, entry]))
+  : null;
+
+const CHART_COLORS = ["c1", "c2", "c3", "c4", "c5", "c6", "c7", "c8"];
+
+function colorForIndex(index) {
+  return CHART_COLORS[index % CHART_COLORS.length];
+}
+
+function shortSha(sha) {
+  return typeof sha === "string" && sha.length > 12 ? sha.slice(0, 12) + "…" : sha;
+}
+
+function renderOverview(section) {
+  const successful = trials.filter((trial) => trial.ok).length;
+  const planned = manifest.dataset_entries * manifest.repeats * (manifest.models || []).length;
+  section.append(
+    h("dl", { class: "facts" },
+      h("dt", { text: "Benchmark" }), h("dd", { text: manifest.benchmark }),
+      h("dt", { text: "Executed (UTC)" }), h("dd", { text: manifest.created_at_utc }),
+      h("dt", { text: "MiniEval version" }), h("dd", { text: manifest.minieval_version }),
+      h("dt", { text: "Models" },), h("dd", { text: String((manifest.models || []).length) }),
+      h("dt", { text: "Trials recorded" }), h("dd", { text: fmtInt(trials.length) }),
+      h("dt", { text: "Requests planned" }), h("dd", { text: planned ? fmtInt(planned) : "n/a" }),
+      h("dt", { text: "Requests succeeded" }), h("dd", { text: fmtInt(successful) }),
+      h("dt", { text: "Duration" }),
+      h("dd", {
+        text: manifest.duration_seconds === null || manifest.duration_seconds === undefined
+          ? "n/a"
+          : manifest.duration_seconds.toFixed(1) + " s",
+      }),
+      h("dt", { text: "Dataset" }), h("dd", { text: manifest.dataset_path }),
+      h("dt", { text: "Dataset sha256" }),
+      h("dd", { title: manifest.dataset_sha256, text: shortSha(manifest.dataset_sha256) }),
+    ),
+  );
+}
+
+const PERFORMANCE_METRICS = [
+  ["answer_accuracy", "Answer accuracy"],
+  ["overall_pass_rate", "Overall pass rate"],
+  ["success_rate", "Request success rate"],
+];
+
+function renderPerformance(section) {
+  let selected = PERFORMANCE_METRICS[0][0];
+
+  const chartArea = h("div");
+  const table = renderPerformanceTable();
+
+  function draw() {
+    chartArea.replaceChildren(rateChart(selected));
+  }
+
+  const radios = h(
+    "fieldset",
+    null,
+    h("legend", { text: "Indicator" }),
+    h(
+      "div",
+      { class: "radio-row" },
+      PERFORMANCE_METRICS.map(([key, label]) =>
+        h("label", null,
+          h("input", {
+            type: "radio",
+            name: "performance-metric",
+            value: key,
+            checked: key === selected ? "" : null,
+            onchange: (event) => {
+              selected = event.target.value;
+              draw();
+            },
+          }),
+          label,
+        ),
+      ),
+    ),
+  );
+
+  section.append(radios, chartArea, table);
+  draw();
+}
+
+function rateChart(metricKey) {
+  const rows = [...stats]
+    .sort((a, b) => (b[metricKey] ?? -1) - (a[metricKey] ?? -1))
+    .map((item) =>
+      h("div", { class: "chart-row" },
+        h("span", { class: "row-label", text: item.model }),
+        h("div", { class: "track", role: "img", "aria-label": ariaForRate(item, metricKey) },
+          item[metricKey] === null || item[metricKey] === undefined
+            ? null
+            : h("div", {
+                class: "fill",
+                style: `width:${Math.max(0.5, item[metricKey] * 100)}%;background:var(--c1)`,
+              }),
+        ),
+        h("span", { class: "row-value", text: fmtRate(item[metricKey]) }),
+      ),
+    );
+  return h("div", { class: "chart-rows" }, rows);
+}
+
+function ariaForRate(item, metricKey) {
+  const label = PERFORMANCE_METRICS.find(([key]) => key === metricKey)[1];
+  return `${item.model}: ${label} ${fmtRate(item[metricKey])}`;
+}
+
+function renderPerformanceTable() {
+  return h(
+    "details",
+    { class: "data-details" },
+    h("summary", { text: "View exact values" }),
+    h("div", { class: "table-scroll" },
+      h("table", null,
+        h("thead", null,
+          h("tr", null,
+            ["Model", "Requests", "OK", "Failed", "Correct", "Incorrect", "Success",
+              "Accuracy", "Coverage", "Overall"].map((label, index) =>
+              h("th", { class: index > 0 ? "num" : null, text: label }),
+            ),
+          ),
+        ),
+        h("tbody", null,
+          stats.map((item) =>
+            h("tr", null,
+              h("td", { text: item.model }),
+              h("td", { class: "num", text: fmtInt(item.requests) }),
+              h("td", { class: "num", text: fmtInt(item.succeeded) }),
+              h("td", { class: "num", text: fmtInt(item.failed) }),
+              h("td", { class: "num", text: fmtInt(item.passed) }),
+              h("td", { class: "num", text: item.incorrect === null ? "n/a" : fmtInt(item.incorrect) }),
+              h("td", { class: "num", text: fmtRate(item.success_rate) }),
+              h("td", { class: "num", text: fmtRate(item.answer_accuracy) }),
+              h("td", { class: "num", text: fmtRate(item.evaluation_coverage) }),
+              h("td", { class: "num", text: fmtRate(item.overall_pass_rate) }),
+            ),
+          ),
+        ),
+      ),
+    ),
+  );
+}
+
+const LATENCY_BINS = 20;
+
+function renderLatency(section) {
+  const selected = new Map(stats.map((item) => [item.model, true]));
+
+  const charts = h("div");
+  const checkboxArea = h("fieldset");
+
+  function draw() {
+    const active = stats.filter((item) => selected.get(item.model));
+    charts.replaceChildren(
+      ...active.map((item) => latencyBlock(item)),
+      active.length === 0
+        ? h("p", { class: "empty-note", text: "Select at least one model." })
+        : null,
+    );
+  }
+
+  checkboxArea.append(
+    h("legend", { text: "Models" }),
+    h(
+      "div",
+      { class: "radio-row" },
+      stats.map((item) =>
+        h("label", null,
+          h("input", {
+            type: "checkbox",
+            checked: "",
+            onchange: (event) => {
+              selected.set(item.model, event.target.checked);
+              draw();
+            },
+          }),
+          item.model,
+        ),
+      ),
+    ),
+  );
+
+  section.append(
+    checkboxArea,
+    h("p", {
+      class: "section-note",
+      text: legacyLatencyRun
+        ? `Histograms use ${LATENCY_BINS} equal-width bins over the successful requests of each model. This run predates 0.3.1: latency mixes generation and evaluation; queue delay is reported separately.`
+        : `Histograms use ${LATENCY_BINS} equal-width bins over the successful requests of each model. Latency measures the model call (generation) only; evaluation and queue delays are reported separately.`,
+    }),
+    charts,
+  );
+  draw();
+}
+
+function latencyBlock(item) {
+  const values = trials
+    .filter((trial) => trial.model === item.model && trial.ok)
+    .map((trial) => generationLatency(trial))
+    .filter((value) => value !== null);
+  const block = h("div", { class: "multi-chart" },
+    h("h4", { text: item.model }),
+    h("p", { class: "sub", text: `${values.length} successful requests` }),
+  );
+  if (values.length === 0) {
+    block.append(h("p", { class: "empty-note", text: "No successful requests: no latency data." }));
+    return block;
+  }
+  const histogram = buildHistogram(values, LATENCY_BINS);
+  const maxCount = Math.max(...histogram.bins);
+  const bars = histogram.bins.map((count, index) => {
+    const start = histogram.min + (index * histogram.width);
+    const end = start + histogram.width;
+    return h("div", {
+      class: "bin",
+      tabindex: "0",
+      style: `height:${Math.max(1, (count / maxCount) * 100)}%`,
+      title: `[${start.toFixed(1)}, ${end.toFixed(1)}) ms: ${count} requests`,
+      "aria-label": `Bin ${index + 1}: ${count} requests between ${start.toFixed(1)} and ${end.toFixed(1)} milliseconds`,
+    });
+  });
+  block.append(
+    h("div", { class: "histogram", role: "img", "aria-label": ariaForHistogram(item.model, histogram) }, bars),
+    h("div", { class: "histogram-axis" },
+      h("span", { text: histogram.min.toFixed(1) + " ms" }),
+      h("span", { text: "median " + fmtMs(item.median_latency_ms) + " ms" }),
+      h("span", { text: "p95 " + fmtMs(item.p95_latency_ms) + " ms" }),
+      h("span", { text: histogram.max.toFixed(1) + " ms" }),
+    ),
+    h("p", {
+      class: "sub",
+      text: legacyLatencyRun
+        ? "Legacy run: generation and evaluation latencies are not separated."
+        : `evaluation median ${fmtMs(item.median_evaluation_ms)} ms · total median ${fmtMs(item.median_total_ms)} ms`,
+    }),
+    h("details", { class: "data-details" },
+      h("summary", { text: "View bin counts" }),
+      h("div", { class: "table-scroll" },
+        h("table", null,
+          h("thead", null,
+            h("tr", null,
+              h("th", { text: "Range (ms)" }),
+              h("th", { class: "num", text: "Requests" }),
+            ),
+          ),
+          h("tbody", null,
+            histogram.bins.map((count, index) => {
+              const start = histogram.min + index * histogram.width;
+              const end = start + histogram.width;
+              return h("tr", null,
+                h("td", { class: "mono", text: `[${start.toFixed(1)}, ${end.toFixed(1)})` }),
+                h("td", { class: "num", text: String(count) }),
+              );
+            }),
+          ),
+        ),
+      ),
+    ),
+  );
+  return block;
+}
+
+function ariaForHistogram(model, histogram) {
+  const total = histogram.bins.reduce((sum, count) => sum + count, 0);
+  return `Latency distribution for ${model}: ${total} requests between ` +
+    `${histogram.min.toFixed(1)} and ${histogram.max.toFixed(1)} milliseconds in ${LATENCY_BINS} bins.`;
+}
+
+function buildHistogram(values, binCount) {
+  const min = Math.min(...values);
+  const max = Math.max(...values);
+  const width = (max - min) / binCount || 1;
+  const bins = Array.from({ length: binCount }, () => 0);
+  for (const value of values) {
+    let index = Math.floor((value - min) / width);
+    if (index >= binCount) index = binCount - 1;
+    bins[index] += 1;
+  }
+  return { bins, min, max, width };
+}
+
+function renderTokensCost(section) {
+  section.append(
+    h("h3", { text: "Token consumption" }),
+    tokenChart(),
+    h("p", {
+      class: "section-note",
+      text: "Bars stack input and output tokens over the successful requests that reported usage. Partial coverage is marked explicitly.",
+    }),
+    h("h3", { text: "Estimated cost" }),
+    costChart(),
+    h("p", {
+      class: "section-note",
+      text: "Hatched bars mark partially known costs; n/a means no pricing data was available. Models are not ranked by cost when data is missing.",
+    }),
+  );
+}
+
+function coverageNote(reported, succeeded) {
+  if (reported === null || reported === undefined) return "coverage unknown";
+  if (reported === succeeded) return null;
+  return `${reported}/${succeeded} requests`;
+}
+
+function tokenChart() {
+  const withData = stats.filter(
+    (item) => item.input_tokens !== null || item.output_tokens !== null,
+  );
+  if (withData.length === 0) {
+    return h("p", { class: "empty-note", text: "No token usage was reported in this run." });
+  }
+  const totals = withData.map(
+    (item) => (item.input_tokens || 0) + (item.output_tokens || 0),
+  );
+  const maxTotal = Math.max(...totals);
+  return h("div", { class: "chart-rows" },
+    h("div", { class: "legend" },
+      h("span", { class: "legend-item" },
+        h("span", { class: "legend-swatch", style: "background:var(--c1)" }), "Input"),
+      h("span", { class: "legend-item" },
+        h("span", { class: "legend-swatch", style: "background:var(--c2)" }), "Output"),
+    ),
+    withData.map((item) => {
+      const input = item.input_tokens || 0;
+      const output = item.output_tokens || 0;
+      const note = coverageNote(item.input_tokens_reported, item.succeeded);
+      return h("div", { class: "chart-row" },
+        h("span", { class: "row-label", text: item.model }),
+        h("div", { class: "track", role: "img", "aria-label": ariaForTokens(item) },
+          h("div", { class: "segment", style: `width:${(input / maxTotal) * 100}%;background:var(--c1)`, title: `Input: ${fmtInt(item.input_tokens)}` }),
+          h("div", { class: "segment", style: `width:${(output / maxTotal) * 100}%;background:var(--c2)`, title: `Output: ${fmtInt(item.output_tokens)}` }),
+        ),
+        h("span", { class: "row-value" },
+          `${fmtInt(item.input_tokens)} in / ${fmtInt(item.output_tokens)} out`,
+          note ? h("span", { class: "bar-note", text: ` (${note})` }) : null,
+        ),
+      );
+    }),
+  );
+}
+
+function ariaForTokens(item) {
+  return `${item.model}: ${fmtInt(item.input_tokens)} input tokens, ${fmtInt(item.output_tokens)} output tokens` +
+    (coverageNote(item.input_tokens_reported, item.succeeded)
+      ? `, coverage ${coverageNote(item.input_tokens_reported, item.succeeded)}`
+      : ", full coverage");
+}
+
+function costChart() {
+  const ranked = [...stats].sort((a, b) => costRank(b) - costRank(a));
+  return h("div", { class: "chart-rows" },
+    h("div", { class: "legend" },
+      h("span", { class: "legend-item" },
+        h("span", { class: "legend-swatch", style: "background:var(--c1)" }), "Known cost"),
+      h("span", { class: "legend-item" },
+        h("span", { class: "legend-swatch", style: "background:repeating-linear-gradient(45deg,var(--c1) 0 4px,transparent 4px 8px)" }),
+        "Partially known"),
+    ),
+    ranked.map((item) => {
+      const full = item.cost_reported === item.succeeded;
+      const note = coverageNote(item.cost_reported, item.succeeded);
+      const maxCost = Math.max(...stats.map((other) => other.cost_usd || 0));
+      const known = item.cost_usd !== null && item.cost_usd !== undefined;
+      return h("div", { class: "chart-row" },
+        h("span", { class: "row-label", text: item.model }),
+        h("div", { class: "track", role: "img", "aria-label": ariaForCost(item) },
+          known && maxCost > 0
+            ? h("div", {
+                class: "fill" + (full ? "" : " partial"),
+                style: `width:${Math.max(0.5, ((item.cost_usd || 0) / maxCost) * 100)}%;background:var(--c1)`,
+              })
+            : null,
+        ),
+        h("span", { class: "row-value" },
+          fmtCost(item.cost_usd) + (item.cost_usd === 0 && full ? " (measured zero)" : ""),
+          known && !full && note ? h("span", { class: "bar-note", text: ` (${note}, partial)` }) : null,
+        ),
+      );
+    }),
+  );
+}
+
+function costRank(item) {
+  if (item.cost_usd === null || item.cost_usd === undefined) return -1;
+  const full = item.cost_reported === item.succeeded;
+  return (full ? 1 : 0) * 1e12 + item.cost_usd;
+}
+
+function ariaForCost(item) {
+  if (item.cost_usd === null || item.cost_usd === undefined) return `${item.model}: cost unknown`;
+  const note = coverageNote(item.cost_reported, item.succeeded);
+  return `${item.model}: estimated cost ${fmtCost(item.cost_usd)} USD` + (note ? `, ${note}` : ", full coverage");
+}
+
+const OUTCOME_FILTERS = [
+  ["all", "All outcomes"],
+  ["correct", "Correct answers"],
+  ["incorrect", "Incorrect answers"],
+  ["failed", "Failed requests"],
+  ["not-evaluable", "Not evaluable"],
+];
+
+const TRIAL_COLUMNS = [
+  ["model", "Model", true],
+  ["entryId", "Entry", true],
+  ["repeat", "Rep", true],
+  ["status", "Status", false],
+  ["evaluation", "Eval", false],
+  ["latencyMs", "Gen (ms)", true],
+  ["evaluationMs", "Eval (ms)", true],
+  ["totalMs", "Total (ms)", true],
+  ["queueMs", "Queue (ms)", true],
+  ["inputTokens", "In tok", true],
+  ["outputTokens", "Out tok", true],
+  ["costUsd", "Cost (USD)", true],
+  ["errorType", "Error", false],
+];
+
+const explorer = {
+  search: "",
+  model: "all",
+  outcome: "all",
+  errorType: "all",
+  sortKey: null,
+  sortAsc: true,
+  page: 1,
+  pageSize: 25,
+};
+
+function trialOutcome(trial) {
+  if (!trial.ok) return "failed";
+  if (trial.passed === true) return "correct";
+  if (trial.passed === false) return "incorrect";
+  return "not-evaluable";
+}
+
+function trialMatches(trial) {
+  if (explorer.model !== "all" && trial.model !== explorer.model) return false;
+  if (explorer.outcome !== "all" && trialOutcome(trial) !== explorer.outcome) return false;
+  if (explorer.errorType !== "all" && trial.errorType !== explorer.errorType) return false;
+  if (explorer.search) {
+    const needle = explorer.search.toLowerCase();
+    const haystack = `${trial.entryId} ${trial.response || ""} ${trial.errorMessage || ""}`.toLowerCase();
+    if (!haystack.includes(needle)) return false;
+  }
+  return true;
+}
+
+function trialSortValue(trial) {
+  const key = explorer.sortKey;
+  if (!key) return null;
+  if (key === "model") return trial.model;
+  if (key === "entryId") return trial.entryId;
+  return trial[key];
+}
+
+function compareTrials(a, b) {
+  const aValue = trialSortValue(a);
+  const bValue = trialSortValue(b);
+  if (aValue === null && bValue === null) return 0;
+  if (aValue === null) return 1;
+  if (bValue === null) return -1;
+  const order = typeof aValue === "string"
+    ? aValue.localeCompare(bValue)
+    : aValue - bValue;
+  return explorer.sortAsc ? order : -order;
+}
+
+function renderTrials(section) {
+  if (trials.length === 0) {
+    section.append(h("p", { class: "empty-note", text: "No trial data is present in this export." }));
+    return;
+  }
+
+  const toolbar = h("div", { class: "toolbar" });
+  const tableWrap = h("div", { class: "table-scroll" });
+  const pagination = h("div", { class: "pagination" });
+  const detailArea = h("div");
+
+  const searchInput = h("input", {
+    type: "text",
+    placeholder: "Search entry, response or error…",
+    "aria-label": "Search trials",
+    oninput: (event) => {
+      explorer.search = event.target.value;
+      explorer.page = 1;
+      draw();
+    },
+  });
+  const modelSelect = selectControl("Filter by model", [["all", "All models"],
+    ...payload.models.map((name) => [name, name])], (value) => {
+    explorer.model = value;
+    explorer.page = 1;
+    draw();
+  });
+  const outcomeSelect = selectControl("Filter by outcome", OUTCOME_FILTERS, (value) => {
+    explorer.outcome = value;
+    explorer.page = 1;
+    draw();
+  });
+  const errorSelect = selectControl("Filter by error type", [["all", "All error types"],
+    ...payload.errorTypes.map((name) => [name, name])], (value) => {
+    explorer.errorType = value;
+    explorer.page = 1;
+    draw();
+  });
+  const pageSizeSelect = selectControl("Rows per page", [["25", "25 rows"], ["50", "50 rows"], ["100", "100 rows"]], (value) => {
+    explorer.pageSize = Number(value);
+    explorer.page = 1;
+    draw();
+  });
+
+  toolbar.append(
+    searchInput,
+    modelSelect,
+    outcomeSelect,
+    errorSelect,
+    pageSizeSelect,
+  );
+  section.append(toolbar, detailArea, tableWrap, pagination);
+
+  function draw() {
+    const filtered = trials.filter(trialMatches).sort(compareTrials);
+    const pageCount = Math.max(1, Math.ceil(filtered.length / explorer.pageSize));
+    explorer.page = Math.min(explorer.page, pageCount);
+    const start = (explorer.page - 1) * explorer.pageSize;
+    const pageRows = filtered.slice(start, start + explorer.pageSize);
+
+    renderTrialTable(pageRows);
+    pagination.replaceChildren(
+      h("button", {
+        type: "button",
+        text: "Previous",
+        disabled: explorer.page <= 1 ? "" : null,
+        onclick: () => {
+          explorer.page -= 1;
+          draw();
+        },
+      }),
+      h("span", { text: `Page ${explorer.page} of ${pageCount}` }),
+      h("button", {
+        type: "button",
+        text: "Next",
+        disabled: explorer.page >= pageCount ? "" : null,
+        onclick: () => {
+          explorer.page += 1;
+          draw();
+        },
+      }),
+      h("span", { class: "result-count", text: `${fmtInt(filtered.length)} of ${fmtInt(trials.length)} trials` }),
+    );
+  }
+
+  function renderTrialTable(pageRows) {
+    tableWrap.replaceChildren(
+      h("table", { "aria-label": "Trial results" },
+        h("thead", null, h("tr", null, TRIAL_COLUMNS.map(([key, label, sortable]) =>
+          h("th", { class: key === "model" || key === "entryId" ? null : "num" },
+            sortable
+              ? h("button", {
+                  type: "button",
+                  onclick: () => {
+                    if (explorer.sortKey === key) {
+                      explorer.sortAsc = !explorer.sortAsc;
+                    } else {
+                      explorer.sortKey = key;
+                      explorer.sortAsc = true;
+                    }
+                    draw();
+                  },
+                  text: sortLabel(key, label),
+                })
+              : label,
+          ),
+        ))),
+        h("tbody", null, pageRows.map((trial) => renderTrialRow(trial))),
+      ),
+    );
+  }
+
+  function sortLabel(key, label) {
+    const arrow = explorer.sortKey === key ? (explorer.sortAsc ? " ↑" : " ↓") : "";
+    return label + arrow;
+  }
+
+  function renderTrialRow(trial) {
+    const row = h("tr", {
+      tabindex: "0",
+      role: "button",
+      "aria-label": `Trial ${trial.entryId}, model ${trial.model}, repeat ${trial.repeat}, ${trialOutcome(trial)}`,
+      onclick: () => showTrialDetail(trial),
+      onkeydown: (event) => {
+        if (event.key === "Enter" || event.key === " ") {
+          event.preventDefault();
+          showTrialDetail(trial);
+        }
+      },
+    },
+      h("td", { class: "mono", text: trial.model }),
+      h("td", { class: "mono", text: trial.entryId }),
+      h("td", { class: "num", text: String(trial.repeat) }),
+      h("td", null, h("span", { class: trial.ok ? "status-ok" : "status-failed", text: trial.ok ? "ok" : "failed" })),
+      h("td", null, evaluationCell(trial)),
+      h("td", { class: "num", text: fmtMs(generationLatency(trial)) }),
+      h("td", { class: "num", text: fmtMs(trial.evaluationMs) }),
+      h("td", { class: "num", text: fmtMs(trial.totalMs) }),
+      h("td", { class: "num", text: fmtMs(trial.queueMs) }),
+      h("td", { class: "num", text: fmtInt(trial.inputTokens) }),
+      h("td", { class: "num", text: fmtInt(trial.outputTokens) }),
+      h("td", { class: "num", text: fmtCost(trial.costUsd) }),
+      h("td", { class: "mono", text: trial.errorType || "" }),
+    );
+    return row;
+  }
+
+  function evaluationCell(trial) {
+    if (!trial.ok) return h("span", { class: "eval-na", text: "—" });
+    if (trial.passed === true) return h("span", { class: "eval-pass", text: "pass" });
+    if (trial.passed === false) return h("span", { class: "eval-fail", text: "fail" });
+    return h("span", { class: "eval-na", text: "n/a" });
+  }
+
+  function showTrialDetail(trial) {
+    const entry = datasetById ? datasetById[trial.entryId] : null;
+    const detail = h("div", { class: "trial-detail" },
+      h("header", null,
+        h("h4", { text: `${trial.model} · ${trial.entryId} · repeat ${trial.repeat}` }),
+        h("button", {
+          type: "button",
+          text: "Close",
+          onclick: closeDetail,
+        }),
+      ),
+      factRow("Status", trial.ok ? "ok" : "failed"),
+      evaluationNodes(trial),
+      factRow(
+        legacyLatencyRun ? "Latency (legacy, includes evaluation)" : "Generation latency",
+        fmtMs(generationLatency(trial)) + " ms",
+      ),
+      legacyLatencyRun
+        ? null
+        : factRow("Evaluation latency", fmtMs(trial.evaluationMs) + " ms"),
+      legacyLatencyRun ? null : factRow("Total latency", fmtMs(trial.totalMs) + " ms"),
+      factRow("Queue delay", fmtMs(trial.queueMs) + " ms"),
+      factRow("Tokens", `in ${fmtInt(trial.inputTokens)} / out ${fmtInt(trial.outputTokens)}`),
+      factRow("Estimated cost", fmtCost(trial.costUsd) + " USD"),
+      trial.errorType ? factRow("Error type", trial.errorType) : null,
+      h("p", { class: "field-label", text: "Response" }),
+      h("pre", { text: trial.response === null ? "n/a" : trial.response }),
+      trial.errorMessage ? h("p", { class: "field-label", text: "Error message" }) : null,
+      trial.errorMessage ? h("pre", { text: trial.errorMessage }) : null,
+      h("p", { class: "field-label", text: "Prompt" }),
+      h("pre", { text: entry ? entry.prompt : "Not recorded in this export." }),
+      h("p", { class: "field-label", text: "Reference" }),
+      h("pre", { text: entry ? `${entry.reference} (${entry.metric})` : "Not recorded in this export." }),
+      entry && entry.system ? h("p", { class: "field-label", text: "System prompt" }) : null,
+      entry && entry.system ? h("pre", { text: entry.system }) : null,
+    );
+    detailArea.replaceChildren(detail);
+    detail.addEventListener("keydown", (event) => {
+      if (event.key === "Escape") closeDetail();
+    });
+    detail.querySelector("button").focus();
+  }
+
+  function closeDetail() {
+    detailArea.replaceChildren();
+  }
+
+  draw();
+}
+
+function factRow(label, value) {
+  return h("div", null, h("span", { class: "field-label", text: label + ": " }), h("span", { class: "mono", text: value }));
+}
+
+function evaluationNodes(trial) {
+  const evaluation = trial.evaluation;
+  if (!evaluation) {
+    return [factRow("Evaluation", trial.ok ? String(trial.passed) : "not evaluable")];
+  }
+  const nodes = [
+    factRow("Evaluator", evaluation.evaluator),
+    factRow("Evaluation status", evaluation.status),
+  ];
+  if (evaluation.score !== null && evaluation.score !== undefined) {
+    nodes.push(factRow("Score", fmtScore(evaluation.score)));
+  }
+  if (evaluation.verdict) {
+    nodes.push(factRow("Verdict", evaluation.verdict));
+  }
+  if (evaluation.error_message) {
+    nodes.push(factRow("Evaluation error", truncate(evaluation.error_message, 200)));
+  }
+  const details = evaluation.details || {};
+
+  if (evaluation.evaluator === "judge" && details.criteria) {
+    nodes.push(h("p", { class: "field-label", text: "Judge criteria" }));
+    nodes.push(
+      h("table", { class: "criteria-table" },
+        h("thead", null,
+          h("tr", null,
+            h("th", { text: "Criterion" }),
+            h("th", { class: "num", text: "Mean" }),
+            h("th", { class: "num", text: "Std" }),
+            h("th", { class: "num", text: "Scale" }),
+          ),
+        ),
+        h("tbody", null,
+          Object.entries(details.criteria).map(([criterionId, values]) =>
+            h("tr", null,
+              h("td", { class: "mono", text: criterionId }),
+              h("td", { class: "num", text: values.mean.toFixed(2) }),
+              h("td", { class: "num", text: values.std === null ? "n/a" : values.std.toFixed(2) }),
+              h("td", { class: "num mono", text: `${values.scale[0]} – ${values.scale[1]}` }),
+            ),
+          ),
+        ),
+      ),
+    );
+    if (details.reason) {
+      nodes.push(h("p", { class: "field-label", text: "Judge reason" }));
+      nodes.push(h("pre", { text: details.reason }));
+    }
+    nodes.push(factRow("Judgments", `${details.judgments} valid / ${details.judge_failures || 0} failed`));
+  }
+
+  if (evaluation.evaluator === "json_schema") {
+    nodes.push(factRow("JSON valid", String(details.json_valid)));
+    if (details.errors && details.errors.length > 0) {
+      nodes.push(h("p", { class: "field-label", text: "Validation errors" }));
+      nodes.push(h("pre", {
+        text: details.errors.map((error) => `${error.path}: ${error.message}`).join("\n"),
+      }));
+    }
+  }
+
+  if (evaluation.evaluator === "code_tests") {
+    if (details.overall && details.overall !== "completed") {
+      nodes.push(factRow("Code outcome", details.overall));
+    }
+    if (details.submission_error) {
+      nodes.push(h("p", { class: "field-label", text: "Submission error" }));
+      nodes.push(h("pre", { text: details.submission_error }));
+    }
+    if (details.tests && details.tests.length > 0) {
+      nodes.push(factRow("Tests", `${details.passed}/${details.total} passed`));
+      nodes.push(h("pre", {
+        text: details.tests
+          .map((test) => `${test.status.padEnd(7)} ${test.name}${test.error ? ` — ${test.error}` : ""}`)
+          .join("\n"),
+      }));
+    }
+  }
+  return nodes;
+}
+
+function selectControl(label, options, onChange) {
+  const select = h("select", { "aria-label": label },
+    options.map(([value, text]) =>
+      h("option", { value, text }),
+    ),
+  );
+  select.addEventListener("change", () => onChange(select.value));
+  return select;
+}
+
+function renderErrors(section) {
+  const modelsWithErrors = stats.filter((item) => Object.keys(item.errors || {}).length > 0);
+  if (modelsWithErrors.length === 0) {
+    section.append(h("p", { class: "empty-note", text: "No provider errors were recorded in this run." }));
+    return;
+  }
+
+  const allTypes = [...new Set(modelsWithErrors.flatMap((item) => Object.keys(item.errors)))].sort();
+  const typeColor = new Map(allTypes.map((name, index) => [name, colorForIndex(index)]));
+  const maxErrors = Math.max(
+    ...modelsWithErrors.map((item) => Object.values(item.errors).reduce((sum, count) => sum + count, 0)),
+  );
+
+  section.append(
+    h("div", { class: "chart-rows" },
+      h("div", { class: "legend" },
+        allTypes.map((name) =>
+          h("span", { class: "legend-item" },
+            h("span", { class: "legend-swatch", style: `background:var(--${typeColor.get(name)})` }),
+            name,
+          ),
+        ),
+      ),
+      modelsWithErrors.map((item) => {
+        const total = Object.values(item.errors).reduce((sum, count) => sum + count, 0);
+        return h("div", { class: "chart-row" },
+          h("span", { class: "row-label", text: item.model }),
+          h("div", { class: "track", role: "img", "aria-label": ariaForErrors(item) },
+            allTypes.map((errorType) =>
+              item.errors[errorType]
+                ? h("div", {
+                    class: "segment",
+                    style: `width:${(item.errors[errorType] / maxErrors) * 100}%;background:var(--${typeColor.get(errorType)})`,
+                    title: `${errorType}: ${item.errors[errorType]}`,
+                  })
+                : null,
+            ),
+          ),
+          h("span", { class: "row-value", text: `${total} error${total === 1 ? "" : "s"}` }),
+        );
+      }),
+    ),
+    h("h3", { text: "Failed requests" }),
+    failedRequestsTable(),
+  );
+}
+
+function ariaForErrors(item) {
+  return item.model + ": " + Object.entries(item.errors)
+    .map(([errorType, count]) => `${errorType} ${count}`).join(", ");
+}
+
+function failedRequestsTable() {
+  const failed = trials.filter((trial) => !trial.ok);
+  return h("div", { class: "table-scroll" },
+    h("table", null,
+      h("thead", null,
+        h("tr", null,
+          h("th", { text: "Model" }),
+          h("th", { text: "Entry" }),
+          h("th", { class: "num", text: "Repeat" }),
+          h("th", { text: "Error type" }),
+          h("th", { text: "Message" }),
+        ),
+      ),
+      h("tbody", null,
+        failed.map((trial) =>
+          h("tr", null,
+            h("td", { class: "mono", text: trial.model }),
+            h("td", { class: "mono", text: trial.entryId }),
+            h("td", { class: "num", text: String(trial.repeat) }),
+            h("td", { class: "mono", text: trial.errorType || "" }),
+            h("td", { title: trial.errorMessage || "", text: truncate(trial.errorMessage || "", 90) }),
+          ),
+        ),
+      ),
+    ),
+  );
+}
+
+function truncate(text, limit) {
+  return text.length > limit ? text.slice(0, limit) + "…" : text;
+}
+
+function renderMetadata(section) {
+  section.append(
+    h("dl", { class: "facts" },
+      h("dt", { text: "Benchmark" }), h("dd", { text: manifest.benchmark }),
+      h("dt", { text: "MiniEval version" }), h("dd", { text: manifest.minieval_version }),
+      h("dt", { text: "Global seed" }), h("dd", { text: String(manifest.seed) }),
+      h("dt", { text: "Per-repeat seeds" }),
+      h("dd", {
+        text: manifest.trial_seeds ? manifest.trial_seeds.join(", ") : "n/a",
+      }),
+      h("dt", { text: "Repeats" }), h("dd", { text: String(manifest.repeats) }),
+      h("dt", { text: "Concurrency" }), h("dd", { text: String(manifest.concurrency) }),
+      h("dt", { text: "Shuffle" }),
+      h("dd", { text: manifest.shuffle === null || manifest.shuffle === undefined ? "n/a" : String(manifest.shuffle) }),
+      h("dt", { text: "Dataset" }), h("dd", { text: manifest.dataset_path }),
+      h("dt", { text: "Dataset sha256" }), h("dd", { text: manifest.dataset_sha256 }),
+    ),
+    h("h3", { text: "Models" }),
+    h("div", { class: "table-scroll" },
+      h("table", null,
+        h("thead", null,
+          h("tr", null,
+            ["Name", "Provider", "Model string", "Temperature", "Max tokens", "Timeout (s)", "Cost / 1M in / out"].map((label, index) =>
+              h("th", { class: index > 2 ? "num" : null, text: label }),
+            ),
+          ),
+        ),
+        h("tbody", null,
+          (manifest.models || []).map((model) =>
+            h("tr", null,
+              h("td", { class: "mono", text: model.name }),
+              h("td", { text: model.provider }),
+              h("td", { class: "mono", text: model.model || "" }),
+              h("td", { class: "num", text: model.temperature === null || model.temperature === undefined ? "n/a" : String(model.temperature) }),
+              h("td", { class: "num", text: model.max_tokens === null || model.max_tokens === undefined ? "n/a" : String(model.max_tokens) }),
+              h("td", { class: "num", text: model.timeout === null || model.timeout === undefined ? "n/a" : String(model.timeout) }),
+              h("td", { class: "num", text: model.input_cost_per_1m !== null && model.input_cost_per_1m !== undefined
+                ? `${model.input_cost_per_1m} / ${model.output_cost_per_1m}` : "n/a" }),
+            ),
+          ),
+        ),
+      ),
+    ),
+    h("p", {
+      class: "section-note",
+      text: payload.dataset
+        ? "This export contains a dataset snapshot: prompts and references are shown in the trial explorer."
+        : "This export does not contain a dataset snapshot: prompts and references are not shown in the trial explorer.",
+    }),
+  );
+  if (manifest.source_run || manifest.reevaluation) {
+    section.append(h("h3", { text: "Reevaluation provenance" }));
+    const source = manifest.source_run || {};
+    const reevaluation = manifest.reevaluation || {};
+    const matching = reevaluation.matching || {};
+    section.append(
+      h("dl", { class: "facts" },
+        h("dt", { text: "Source run" }), h("dd", { text: source.path || "n/a" }),
+        h("dt", { text: "Source benchmark" }), h("dd", { text: source.benchmark || "n/a" }),
+        h("dt", { text: "Source generation (UTC)" }), h("dd", { text: source.created_at_utc || "n/a" }),
+        h("dt", { text: "Source MiniEval version" }), h("dd", { text: source.minieval_version || "n/a" }),
+        h("dt", { text: "Source dataset sha256" }), h("dd", { text: source.dataset_sha256 || "n/a" }),
+        h("dt", { text: "Reevaluated with" }), h("dd", { text: reevaluation.minieval_version || "n/a" }),
+        h("dt", { text: "Reevaluation dataset sha256" }), h("dd", { text: reevaluation.dataset_sha256 || "n/a" }),
+        h("dt", { text: "Judge rubric" }),
+        h("dd", {
+          text: reevaluation.judge && reevaluation.judge.rubric_fingerprint
+            ? reevaluation.judge.rubric_fingerprint
+            : "n/a",
+        }),
+        h("dt", { text: "Question matching" }),
+        h("dd", {
+          text: `${matching.basis || "n/a"}: ${fmtInt(matching.verified)} verified, ` +
+            `${fmtInt(matching.unverified)} unverified, ` +
+            `${(matching.conflicts || []).length} conflict(s)`,
+        }),
+      ),
+      h("p", {
+        class: "section-note",
+        text: "Responses and their latencies come from the source run; evaluations were recomputed " +
+          "by the reevaluation configuration above. Original results were not modified.",
+      }),
+    );
+  }
+}
+
+function fmtScore(value) {
+  return value === null || value === undefined ? "n/a" : value.toFixed(3);
+}
+
+function renderEvaluationOverview(section) {
+  const summaries = payload.evaluatorSummaries;
+  if (!summaries || summaries.length === 0) {
+    section.append(h("p", { class: "empty-note", text: "No evaluation summaries available." }));
+    return;
+  }
+  section.append(
+    h("div", { class: "table-scroll" },
+      h("table", null,
+        h("thead", null,
+          h("tr", null,
+            ["Evaluator", "Trials", "Completed", "Passed", "Incorrect", "Eval failures",
+              "Unavailable", "Binary pass rate", "Mean score", "Eval cost (USD)"].map((label, index) =>
+              h("th", { class: index > 0 ? "num" : null, text: label }),
+            ),
+          ),
+        ),
+        h("tbody", null,
+          summaries.map((item) =>
+            h("tr", null,
+              h("td", { class: "mono", text: item.evaluator }),
+              h("td", { class: "num", text: fmtInt(item.trials) }),
+              h("td", { class: "num", text: fmtInt(item.completed) }),
+              h("td", { class: "num", text: fmtInt(item.passed) }),
+              h("td", { class: "num", text: fmtInt(item.failed_binary) }),
+              h("td", { class: "num", text: fmtInt(item.evaluator_failed) }),
+              h("td", { class: "num", text: fmtInt(item.evaluator_unavailable) }),
+              h("td", { class: "num", text: fmtRate(item.binary_pass_rate) }),
+              h("td", { class: "num", text: item.mean_score === null ? "n/a" : item.mean_score.toFixed(3) }),
+              h("td", { class: "num", text: item.cost_usd === null ? "n/a" : item.cost_usd.toFixed(6) }),
+            ),
+          ),
+        ),
+      ),
+    ),
+    h("p", {
+      class: "section-note",
+      text: "Each evaluator measures something different (exact correctness, subjective quality, " +
+        "structural conformance, functional tests). Their scores use different scales and are " +
+        "never merged into a single ranking.",
+    }),
+  );
+  const byModel = payload.evaluatorsByModel;
+  if (byModel && byModel.length > 1) {
+    section.append(
+      h("h4", { text: "Per model and evaluator" }),
+      h("div", { class: "table-scroll" },
+        h("table", null,
+          h("thead", null,
+            h("tr", null,
+              ["Model", "Evaluator", "Trials", "Binary", "Passed", "Binary pass rate",
+                "Mean score"].map((label, index) =>
+                h("th", { class: index > 1 ? "num" : null, text: label }),
+              ),
+            ),
+          ),
+          h("tbody", null,
+            byModel.map((item) =>
+              h("tr", null,
+                h("td", { class: "mono", text: item.model }),
+                h("td", { class: "mono", text: item.evaluator }),
+                h("td", { class: "num", text: fmtInt(item.trials) }),
+                h("td", { class: "num", text: fmtInt(item.binary) }),
+                h("td", { class: "num", text: fmtInt(item.passed) }),
+                h("td", { class: "num", text: fmtRate(item.binary_pass_rate) }),
+                h("td", { class: "num", text: item.mean_score === null ? "n/a" : item.mean_score.toFixed(3) }),
+              ),
+            ),
+          ),
+        ),
+      ),
+      h("p", {
+        class: "section-note",
+        text: "Mixed datasets keep one population per evaluator: pass rates above use each " +
+          "evaluator's own binary trials as denominator.",
+      }),
+    );
+  }
+}
+
+function judgeModelBlocks() {
+  const byModel = new Map();
+  for (const trial of judgeTrials) {
+    if (!byModel.has(trial.model)) byModel.set(trial.model, []);
+    byModel.get(trial.model).push(trial);
+  }
+  return [...byModel.entries()].map(([model, trialsForModel]) => {
+    const completed = trialsForModel.filter(
+      (trial) => trial.evaluation.status === "completed" && trial.evaluation.score !== null
+    );
+    const scores = completed.map((trial) => trial.evaluation.score);
+    const criteria = {};
+    for (const trial of completed) {
+      const details = trial.evaluation.details || {};
+      for (const [criterionId, values] of Object.entries(details.criteria || {})) {
+        if (!criteria[criterionId]) criteria[criterionId] = { values: [], scale: values.scale };
+        criteria[criterionId].values.push(values.mean);
+      }
+    }
+    const knownCosts = trialsForModel
+      .map((trial) => trial.evaluation.cost_usd)
+      .filter((value) => value !== null && value !== undefined);
+    const cost = knownCosts.length > 0
+      ? knownCosts.reduce((total, value) => total + value, 0)
+      : null;
+    return { model, trialsForModel, completed, scores, criteria, cost, knownCosts };
+  });
+}
+
+function renderJudgeScores(section) {
+  if (judgeTrials.length === 0) {
+    section.append(h("p", { class: "empty-note", text: "No judge evaluations in this run." }));
+    return;
+  }
+  section.append(
+    h("p", {
+      class: "section-note",
+      text: "Judge scores are subjective opinions of the configured judge model, normalized to " +
+        "[0, 1] per criterion then weighted. They are kept separate from exact-match accuracy, " +
+        "response length is not treated as a quality indicator, and they do not represent an " +
+        "objective or universal measure of quality.",
+    }),
+    h("div", null, judgeModelBlocks().map((block) => judgeBlock(block))),
+  );
+}
+
+function judgeBlock(block) {
+  const costNote = block.cost === null
+    ? ""
+    : ` — judge cost ${block.cost.toFixed(6)} USD` +
+      (block.knownCosts.length < block.trialsForModel.length
+        ? ` (partial: known for ${block.knownCosts.length}/${block.trialsForModel.length} evaluations)`
+        : "");
+  const blockNode = h("div", { class: "multi-chart" },
+    h("h4", { text: block.model }),
+    h("p", {
+      class: "sub",
+      text: `${block.completed.length} judged response(s)` + costNote,
+    }),
+  );
+  if (block.scores.length === 0) {
+    blockNode.append(h("p", { class: "empty-note", text: "No completed judgment." }));
+    return blockNode;
+  }
+  const mean = block.scores.reduce((sum, value) => sum + value, 0) / block.scores.length;
+  const std = block.scores.length >= 2
+    ? Math.sqrt(
+        block.scores.reduce((sum, value) => sum + (value - mean) ** 2, 0) /
+          (block.scores.length - 1),
+      )
+    : null;
+  blockNode.append(
+    h("p", { class: "sub", text: `overall ${mean.toFixed(3)}${std === null ? "" : ` ± ${std.toFixed(3)}`} (normalized)` }),
+    scoreHistogram(block.scores),
+    h("table", { class: "criteria-table" },
+      h("thead", null,
+        h("tr", null,
+          h("th", { text: "Criterion" }),
+          h("th", { class: "num", text: "Mean" }),
+          h("th", { class: "num", text: "Std" }),
+          h("th", { class: "num", text: "Scale" }),
+        ),
+      ),
+      h("tbody", null,
+        Object.entries(block.criteria).map(([criterionId, data]) => {
+          const criterionMean = data.values.reduce((sum, value) => sum + value, 0) / data.values.length;
+          const criterionStd = data.values.length >= 2
+            ? Math.sqrt(
+                data.values.reduce((sum, value) => sum + (value - criterionMean) ** 2, 0) /
+                  (data.values.length - 1),
+              )
+            : null;
+          return h("tr", null,
+            h("td", { class: "mono", text: criterionId }),
+            h("td", { class: "num", text: criterionMean.toFixed(2) }),
+            h("td", { class: "num", text: criterionStd === null ? "n/a" : criterionStd.toFixed(2) }),
+            h("td", { class: "num mono", text: `${data.scale[0]} – ${data.scale[1]}` }),
+          );
+        }),
+      ),
+    ),
+  );
+  return blockNode;
+}
+
+function scoreHistogram(values) {
+  const bins = Array.from({ length: 10 }, () => 0);
+  for (const value of values) {
+    let index = Math.floor(value * 10);
+    if (index >= 10) index = 9;
+    bins[index] += 1;
+  }
+  const max = Math.max(...bins);
+  return h("div", null,
+    h("div", { class: "histogram", role: "img", "aria-label": "Judge score distribution" },
+      bins.map((count, index) =>
+        h("div", {
+          class: "bin",
+          tabindex: "0",
+          style: `height:${Math.max(1, (count / max) * 100)}%`,
+          title: `[${(index / 10).toFixed(1)}, ${((index + 1) / 10).toFixed(1)}): ${count} response(s)`,
+        }),
+      ),
+    ),
+    h("div", { class: "histogram-axis" },
+      h("span", { text: "0.0" }),
+      h("span", { text: "normalized judge score" }),
+      h("span", { text: "1.0" }),
+    ),
+  );
+}
+
+function renderStructured(section) {
+  const structured = trials.filter(
+    (trial) => trial.evaluation && trial.evaluation.evaluator === "json_schema",
+  );
+  if (structured.length === 0) {
+    section.append(h("p", { class: "empty-note", text: "No json_schema evaluations in this run." }));
+    return;
+  }
+  const validCount = structured.filter(
+    (trial) => trial.evaluation.details && trial.evaluation.details.json_valid,
+  ).length;
+  const passedCount = structured.filter((trial) => trial.evaluation.passed === true).length;
+
+  const pathCounts = new Map();
+  for (const trial of structured) {
+    for (const error of (trial.evaluation.details || {}).errors || []) {
+      pathCounts.set(error.path, (pathCounts.get(error.path) || 0) + 1);
+    }
+  }
+  const topPaths = [...pathCounts.entries()].sort((a, b) => b[1] - a[1]).slice(0, 10);
+
+  const byModel = new Map();
+  for (const trial of structured) {
+    if (!byModel.has(trial.model)) byModel.set(trial.model, { total: 0, valid: 0, passed: 0 });
+    const entry = byModel.get(trial.model);
+    entry.total += 1;
+    if (trial.evaluation.details && trial.evaluation.details.json_valid) entry.valid += 1;
+    if (trial.evaluation.passed === true) entry.passed += 1;
+  }
+
+  section.append(
+    h("div", { class: "table-scroll" },
+      h("table", null,
+        h("thead", null,
+          h("tr", null,
+            h("th", { text: "Model" }),
+            h("th", { class: "num", text: "Responses" }),
+            h("th", { class: "num", text: "Valid JSON" }),
+            h("th", { class: "num", text: "Schema conformant" }),
+          ),
+        ),
+        h("tbody", null,
+          [...byModel.entries()].map(([model, entry]) =>
+            h("tr", null,
+              h("td", { class: "mono", text: model }),
+              h("td", { class: "num", text: fmtInt(entry.total) }),
+              h("td", { class: "num", text: `${fmtInt(entry.valid)} (${(entry.valid / entry.total * 100).toFixed(0)}%)` }),
+              h("td", { class: "num", text: `${fmtInt(entry.passed)} (${(entry.passed / entry.total * 100).toFixed(0)}%)` }),
+            ),
+          ),
+        ),
+      ),
+    ),
+    h("p", {
+      class: "section-note",
+      text: `${validCount}/${structured.length} responses parsed as valid JSON; ` +
+        `${passedCount}/${structured.length} conformed to their schema. Structural conformance ` +
+        "does not mean the content is factually correct.",
+    }),
+    topPaths.length > 0
+      ? h("div", { class: "table-scroll" },
+          h("table", null,
+            h("thead", null,
+              h("tr", null,
+                h("th", { text: "Invalid property" }),
+                h("th", { class: "num", text: "Occurrences" }),
+              ),
+            ),
+            h("tbody", null,
+              topPaths.map(([path, count]) =>
+                h("tr", null,
+                  h("td", { class: "mono", text: path }),
+                  h("td", { class: "num", text: String(count) }),
+                ),
+              ),
+            ),
+          ),
+        )
+      : null,
+  );
+}
+
+function renderCodeEvaluation(section) {
+  const codeTrials = trials.filter(
+    (trial) => trial.evaluation && trial.evaluation.evaluator === "code_tests",
+  );
+  if (codeTrials.length === 0) {
+    section.append(h("p", { class: "empty-note", text: "No code evaluations in this run." }));
+    return;
+  }
+  const byModel = new Map();
+  for (const trial of codeTrials) {
+    if (!byModel.has(trial.model)) {
+      byModel.set(trial.model, { total: 0, scores: [], timeouts: 0, submissionErrors: 0, unavailable: 0 });
+    }
+    const entry = byModel.get(trial.model);
+    entry.total += 1;
+    const evaluation = trial.evaluation;
+    if (evaluation.status === "unavailable" || evaluation.status === "failed") {
+      entry.unavailable += 1;
+    } else if (evaluation.details && evaluation.details.overall === "timeout") {
+      entry.timeouts += 1;
+    } else if (evaluation.details && evaluation.details.overall === "submission_error") {
+      entry.submissionErrors += 1;
+    } else if (evaluation.score !== null && evaluation.score !== undefined) {
+      entry.scores.push(evaluation.score);
+    }
+  }
+  section.append(
+    h("div", { class: "table-scroll" },
+      h("table", null,
+        h("thead", null,
+          h("tr", null,
+            ["Model", "Responses", "Mean test pass rate", "Timeouts", "Submission errors",
+              "Infrastructure"].map((label, index) =>
+              h("th", { class: index > 0 ? "num" : null, text: label }),
+            ),
+          ),
+        ),
+        h("tbody", null,
+          [...byModel.entries()].map(([model, entry]) =>
+            h("tr", null,
+              h("td", { class: "mono", text: model }),
+              h("td", { class: "num", text: fmtInt(entry.total) }),
+              h("td", {
+                class: "num",
+                text: entry.scores.length === 0
+                  ? "n/a"
+                  : (entry.scores.reduce((sum, value) => sum + value, 0) / entry.scores.length * 100).toFixed(1) + "%",
+              }),
+              h("td", { class: "num", text: fmtInt(entry.timeouts) }),
+              h("td", { class: "num", text: fmtInt(entry.submissionErrors) }),
+              h("td", { class: "num", text: fmtInt(entry.unavailable) }),
+            ),
+          ),
+        ),
+      ),
+    ),
+    h("p", {
+      class: "section-note",
+      text: "Code was executed only inside a restricted container. Infrastructure failures and " +
+        "unavailable runtimes are never counted as functional failures of the model.",
+    }),
+  );
+}
+
+function renderStatisticalAnalysis(section) {
+  const data = payload.statistics;
+  if (!data || data.length === 0) {
+    section.append(h("p", { class: "empty-note", text: "No statistical analysis available." }));
+    return;
+  }
+  const resampling = data[0].resampling || {};
+  const metricLabels = {
+    pass_rate: "pass rate (conditional on evaluation)",
+    latency_ms: "generation latency (ms)",
+    judge_score: "judge score",
+  };
+  const metricRows = [];
+  for (const entry of data) {
+    for (const metricKey of ["pass_rate", "latency_ms", "judge_score"]) {
+      const metric = entry[metricKey];
+      if (!metric || metric.summary.count === 0) continue;
+      metricRows.push({ model: entry.model, metricKey, metric });
+    }
+  }
+  section.append(
+    h("div", { class: "table-scroll" },
+      h("table", null,
+        h("thead", null,
+          h("tr", null,
+            ["Model", "Metric", "Mean", "Median", "Std", "Min", "Max", "95% CI", "Units",
+              "Excluded questions"].map(
+              (label, index) => h("th", { class: index > 1 ? "num" : null, text: label }),
+            ),
+          ),
+        ),
+        h("tbody", null,
+          metricRows.map(({ model, metricKey, metric }) => {
+            const format = (value) =>
+              value === null || value === undefined
+                ? "n/a"
+                : metricKey === "latency_ms" ? value.toFixed(1) : value.toFixed(3);
+            const ci = metric.ci95.low === null || metric.ci95.low === undefined
+              ? "n/a"
+              : `[${format(metric.ci95.low)}, ${format(metric.ci95.high)}]`;
+            const excluded = metric.excluded_questions
+              ? (metric.excluded_questions.length === 0
+                ? "0"
+                : `${metric.excluded_questions.length}: ${metric.excluded_questions.join(", ")}`)
+              : "n/a";
+            return h("tr", null,
+              h("td", { class: "mono", text: model }),
+              h("td", { text: metricLabels[metricKey] || metricKey }),
+              h("td", { class: "num", text: format(metric.summary.mean) }),
+              h("td", { class: "num", text: format(metric.summary.median) }),
+              h("td", { class: "num", text: format(metric.summary.std) }),
+              h("td", { class: "num", text: format(metric.summary.min) }),
+              h("td", { class: "num", text: format(metric.summary.max) }),
+              h("td", { class: "num", text: ci }),
+              h("td", { class: "num", text: fmtInt(metric.summary.count) }),
+              h("td", { class: "num", title: excluded, text: excluded }),
+            );
+          }),
+        ),
+      ),
+    ),
+    h("p", {
+      class: "section-note",
+      text: `Bootstrap: percentile method, ${fmtInt(resampling.iterations)} iterations, ` +
+        `${Math.round((resampling.confidence_level || 0.95) * 100)}% confidence, resampling unit: ` +
+        `${resampling.unit}. Confidence intervals describe the observed data; overlapping or ` +
+        "non-overlapping intervals are not a significance test between models.",
+    }),
+  );
+}
+
+const SECTIONS = [
+  ["overview", "Overview", renderOverview],
+  ["evaluation-overview", "Evaluation overview", renderEvaluationOverview],
+  ["judge", "Judge scores", renderJudgeScores],
+  ["structured", "Structured output", renderStructured],
+  ["code-eval", "Code evaluation", renderCodeEvaluation],
+  ["performance", "Model performance", renderPerformance],
+  ["latency", "Latency", renderLatency],
+  ["tokens-cost", "Tokens & cost", renderTokensCost],
+  ["statistics", "Statistical analysis", renderStatisticalAnalysis],
+  ["trials", "Trial explorer", renderTrials],
+  ["errors", "Errors", renderErrors],
+  ["metadata", "Run metadata", renderMetadata],
+];
+
+function buildPage() {
+  const app = document.getElementById("app");
+  const nav = document.getElementById("section-nav");
+  for (const [id, title, render] of SECTIONS) {
+    nav.append(h("a", { href: "#" + id, text: title }));
+    const section = h("section", { id },
+      h("h2", { text: title }),
+    );
+    app.append(section);
+    render(section);
+  }
+}
+
+function setupThemeToggle() {
+  const root = document.documentElement;
+  const button = document.getElementById("theme-toggle");
+  const preferDark = window.matchMedia("(prefers-color-scheme: dark)").matches;
+  root.dataset.theme = preferDark ? "dark" : "light";
+  const syncLabel = () => {
+    button.textContent = root.dataset.theme === "dark" ? "Light theme" : "Dark theme";
+  };
+  button.addEventListener("click", () => {
+    root.dataset.theme = root.dataset.theme === "dark" ? "light" : "dark";
+    syncLabel();
+  });
+  syncLabel();
+}
+
+buildPage();
+setupThemeToggle();
+
+</script>
+</body>
+</html>

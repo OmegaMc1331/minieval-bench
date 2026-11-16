@@ -326,20 +326,24 @@ function renderReproducibility(section) {
         ),
       ),
     ),
-    samplingRows.length > 0
-      ? h("div", { class: "table-scroll" },
-          h("table", null,
-            h("thead", null,
-              h("tr", null,
-                ["Task", "Selected / total", "Seed", "Selection"].map((label, index) =>
-                  h("th", { class: index > 0 ? "num" : null, text: label })
-                ),
+  );
+  if (samplingRows.length > 0) {
+    section.append(
+      h("div", { class: "table-scroll" },
+        h("table", null,
+          h("thead", null,
+            h("tr", null,
+              ["Task", "Selected / total", "Seed", "Selection"].map((label, index) =>
+                h("th", { class: index > 0 ? "num" : null, text: label })
               ),
             ),
-            h("tbody", null, samplingRows),
           ),
-        )
-      : null,
+          h("tbody", null, samplingRows),
+        ),
+      ),
+    );
+  }
+  section.append(
     h("p", {
       class: "section-note",
       text: "The lockfile pins the protocol: suite definition, dataset contents, sampling" +
