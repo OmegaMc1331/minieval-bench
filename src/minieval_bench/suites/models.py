@@ -7,7 +7,7 @@ from pathlib import PurePosixPath
 
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
-from minieval_bench.models import Defaults, EvaluatorsConfig, MetricName
+from minieval_bench.models import Defaults, EvaluatorsConfig, MetricName, StatisticsConfig
 
 SUITE_ID_PATTERN = re.compile(r"^[a-z0-9][a-z0-9-]*$")
 TASK_ID_PATTERN = re.compile(r"^[a-z0-9][a-z0-9-]*$")
@@ -61,6 +61,7 @@ class SuiteDefinition(BaseModel):
     defaults: Defaults = Defaults()
     tasks: list[SuiteTask] = Field(min_length=1)
     evaluators: EvaluatorsConfig | None = None
+    statistics: StatisticsConfig = StatisticsConfig()
 
     @model_validator(mode="after")
     def check_definition(self) -> SuiteDefinition:

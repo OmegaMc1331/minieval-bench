@@ -116,3 +116,140 @@ def test_suite_list_marks_malformed_suite(tmp_path: Path) -> None:
     assert result.exit_code == 0
     assert "broken" in result.output
     assert "error" in result.output
+
+
+def write_models_file(tmp_path: Path) -> Path:
+    path = tmp_path / "models.yaml"
+    path.write_text(
+        "models:\n  - name: mock-a\n    provider: mock\n", encoding="utf-8"
+    )
+    return path
+
+
+def test_suite_run_cli_executes_and_writes_artefacts(tmp_path: Path) -> None:
+    suites_root = write_user_suite(tmp_path, "run-suite")
+    models = write_models_file(tmp_path)
+    output = tmp_path / "out"
+    result = runner.invoke(
+        app,
+        [
+            "suite", "run", "run-suite",
+            "--config", str(models),
+            "--output", str(output),
+            "--path", str(suites_root),
+        ],
+        env=WIDE,
+    )
+
+    assert result.exit_code == 0
+    assert "completed" in result.output
+    assert (output / "suite-manifest.json").is_file()
+    assert (output / "benchmark.lock.json").is_file()
+    assert (output / "suite-results.json").is_file()
+    assert (output / "tasks" / "task-a" / "results.json").is_file()
+
+
+def test_suite_run_cli_dry_run_writes_nothing(tmp_path: Path) -> None:
+    suites_root = write_user_suite(tmp_path, "dry-suite")
+    models = write_models_file(tmp_path)
+    output = tmp_path / "dry-out"
+    result = runner.invoke(
+        app,
+        [
+            "suite", "run", "dry-suite",
+            "--config", str(models),
+            "--output", str(output),
+            "--dry-run",
+            "--path", str(suites_root),
+        ],
+        env=WIDE,
+    )
+
+    assert result.exit_code == 0
+    assert "Dry run" in result.output
+    assert "Planned candidate calls: 4" in result.output
+    assert "nothing was executed and nothing was written" in result.output
+    assert not output.exists()
+
+
+def test_suite_run_cli_dry_run_flags_overrides_and_sampling(tmp_path: Path) -> None:
+    suites_root = write_user_suite(tmp_path, "dry-suite")
+    models = write_models_file(tmp_path)
+    result = runner.invoke(
+        app,
+        [
+            "suite", "run", "dry-suite",
+            "--config", str(models),
+            "--output", str(tmp_path / "o"),
+            "--dry-run",
+            "--repeats", "1",
+            "--sample", "1",
+            "--sample-seed", "3",
+            "--path", str(suites_root),
+        ],
+        env=WIDE,
+    )
+
+    assert result.exit_code == 0
+    assert "User overrides: {'repeats': 1}" in result.output
+    assert "Sampling: random, 1 entries per task" in result.output
+    assert "Planned candidate calls: 1" in result.output
+
+
+def test_suite_run_cli_rejects_invalid_suite(tmp_path: Path) -> None:
+    suites_root = write_user_suite(tmp_path, "bad-suite")
+    dataset = suites_root / "bad-suite" / "datasets" / "a.jsonl"
+    dataset.write_text(
+        '{"id": "a1", "prompt": "one", "metric": "contains", "reference": "one"}\n',
+        encoding="utf-8",
+    )
+    models = write_models_file(tmp_path)
+    result = runner.invoke(
+        app,
+        [
+            "suite", "run", "bad-suite",
+            "--config", str(models),
+            "--output", str(tmp_path / "o"),
+            "--path", str(suites_root),
+        ],
+        env=WIDE,
+    )
+
+    assert result.exit_code == 1
+    assert "expects metric 'exact_match'" in result.output
+
+
+def test_suite_run_cli_enforces_max_calls(tmp_path: Path) -> None:
+    suites_root = write_user_suite(tmp_path, "capped-suite")
+    models = write_models_file(tmp_path)
+    result = runner.invoke(
+        app,
+        [
+            "suite", "run", "capped-suite",
+            "--config", str(models),
+            "--output", str(tmp_path / "o"),
+            "--max-calls", "3",
+            "--path", str(suites_root),
+        ],
+        env=WIDE,
+    )
+
+    assert result.exit_code == 1
+    assert "exceed --max-calls" in result.output
+
+
+def test_suite_run_cli_requires_models_file(tmp_path: Path) -> None:
+    suites_root = write_user_suite(tmp_path, "nosuite")
+    result = runner.invoke(
+        app,
+        [
+            "suite", "run", "nosuite",
+            "--config", str(tmp_path / "absent.yaml"),
+            "--output", str(tmp_path / "o"),
+            "--path", str(suites_root),
+        ],
+        env=WIDE,
+    )
+
+    assert result.exit_code == 1
+    assert "models file not found" in result.output
