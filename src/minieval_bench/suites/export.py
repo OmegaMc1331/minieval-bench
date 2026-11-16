@@ -87,8 +87,13 @@ def json_bytes(payload: dict) -> bytes:
     return (json.dumps(payload, indent=2) + "\n").encode()
 
 
+RENDERED_REPORT_NAME = "suite-report.html"
+
+
 def scan_for_secrets(members: dict[str, bytes], run: SuiteRunData) -> None:
     for name, content in members.items():
+        if name == RENDERED_REPORT_NAME:
+            continue
         text = content.decode("utf-8", errors="replace")
         if mask_secrets(text) != text:
             raise SuiteExportError(

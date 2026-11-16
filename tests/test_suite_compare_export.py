@@ -337,3 +337,17 @@ def test_suite_export_cli(tmp_path: Path) -> None:
         env=WIDE,
     )
     assert result.exit_code == 1
+
+
+def test_suite_export_with_responses_accepts_rendered_reports(tmp_path: Path) -> None:
+    suite_dir = write_compare_suite(tmp_path)
+    output_dir = run_once(tmp_path, suite_dir, "export-js")
+    from minieval_bench.suites.reports import load_suite_run, write_suite_reports
+
+    write_suite_reports(load_suite_run(output_dir), html=True)
+    archive = tmp_path / "export-js.zip"
+
+    summary = export_suite_archive(output_dir, archive, include_responses=True)
+
+    assert summary["include_responses"] is True
+    assert archive.is_file()
