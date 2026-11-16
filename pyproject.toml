@@ -1,6 +1,6 @@
 [project]
 name = "minieval-bench"
-version = "0.3.1"
+version = "0.4.0"
 description = "Lightweight framework for benchmarking and comparing language models."
 readme = "README.md"
 license = "MIT"
