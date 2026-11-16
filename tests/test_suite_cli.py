@@ -50,11 +50,12 @@ def test_suite_list_shows_user_suites(tmp_path: Path) -> None:
     assert "ok" in result.output
 
 
-def test_suite_list_without_suites_prints_guidance(tmp_path: Path) -> None:
+def test_suite_list_always_includes_builtin_suites(tmp_path: Path) -> None:
     result = runner.invoke(app, ["suite", "list", "--path", str(tmp_path / "empty")], env=WIDE)
 
     assert result.exit_code == 0
-    assert "No suites found" in result.output
+    assert "mini-general" in result.output
+    assert "mini-code" in result.output
 
 
 def test_suite_info_shows_tasks_and_conditions(tmp_path: Path) -> None:

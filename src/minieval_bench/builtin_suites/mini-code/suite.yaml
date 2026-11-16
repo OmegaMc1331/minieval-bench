@@ -1,0 +1,22 @@
+defaults:
+  concurrency: 1
+  repeats: 1
+  seed: 42
+  timeout: 60
+description: Experimental suite running generated Python functions against unit tests
+  inside the restricted Docker runtime. Requires the explicit --allow-code-execution
+  flag. Verdicts come from the v0.3.1 controller/worker harness; an adversarial submission
+  can still tamper inside the worker process, so treat pass rates with the documented
+  trust limits.
+evaluators:
+  code:
+    runtime: docker
+id: mini-code
+license: MIT
+name: MiniEval Code Evaluation (experimental)
+source: https://github.com/OmegaMc1331/minieval-bench
+tasks:
+- dataset: datasets/functions.jsonl
+  expected_metric: code_tests
+  id: functions
+version: 0.1.0

@@ -1,0 +1,6 @@
+{"category": "format", "id": "fmt-01", "metric": "exact_match", "prompt": "Reply with exactly: READY", "reference": "READY"}
+{"category": "format", "id": "fmt-02", "metric": "exact_match", "prompt": "Reply with exactly: the meeting is at nine", "reference": "the meeting is at nine"}
+{"category": "format", "id": "fmt-03", "metric": "exact_match", "prompt": "Reply with exactly the word banana twice, separated by a comma.", "reference": "banana, banana"}
+{"category": "format", "id": "fmt-04", "metric": "exact_match", "prompt": "Reply with exactly: 42", "reference": "42"}
+{"category": "format", "id": "fmt-05", "metric": "exact_match", "prompt": "Reply with exactly: error E-404 found", "reference": "error E-404 found"}
+{"category": "format", "id": "fmt-06", "metric": "exact_match", "prompt": "Reply with exactly the three letters A, B and C separated by spaces.", "reference": "A B C"}

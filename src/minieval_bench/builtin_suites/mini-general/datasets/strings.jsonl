@@ -1,0 +1,10 @@
+{"category": "strings", "id": "str-01", "metric": "exact_match", "prompt": "Spell the word 'listen' backwards. Reply with the word only.", "reference": "netsil"}
+{"category": "strings", "id": "str-02", "metric": "exact_match", "prompt": "How many letters are in the word 'elephant'? Reply with the number only.", "reference": "8"}
+{"category": "strings", "id": "str-03", "metric": "exact_match", "prompt": "How many vowels are in the word 'education'? Reply with the number only.", "reference": "5"}
+{"category": "strings", "id": "str-04", "metric": "exact_match", "prompt": "Write 'hello world' in uppercase letters. Reply with the result only.", "reference": "HELLO WORLD"}
+{"category": "strings", "id": "str-05", "metric": "exact_match", "prompt": "How many words are in the sentence 'the quick brown fox jumps'? Reply with the number only.", "reference": "5"}
+{"category": "strings", "id": "str-06", "metric": "exact_match", "prompt": "What is the last letter of the word 'planet'? Reply with the letter only.", "reference": "t"}
+{"category": "strings", "id": "str-07", "metric": "exact_match", "prompt": "How many letters are in the word 'mississippi'? Reply with the number only.", "reference": "11"}
+{"category": "strings", "id": "str-08", "metric": "exact_match", "prompt": "Spell the word 'drawer' backwards. Reply with the word only.", "reference": "reward"}
+{"category": "strings", "id": "str-09", "metric": "exact_match", "prompt": "What is the first letter of the word 'zephyr'? Reply with the letter only.", "reference": "z"}
+{"category": "strings", "id": "str-10", "metric": "exact_match", "prompt": "Remove the spaces from 'mini eval bench' and reply with the result only.", "reference": "minievalbench"}

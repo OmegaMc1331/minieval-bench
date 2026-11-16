@@ -1,0 +1,10 @@
+{"category": "facts", "id": "fact-01", "metric": "exact_match", "prompt": "How many days are in a leap year? Reply with the number only.", "reference": "366"}
+{"category": "facts", "id": "fact-02", "metric": "exact_match", "prompt": "What is the chemical symbol for gold? Reply with the symbol only.", "reference": "Au"}
+{"category": "facts", "id": "fact-03", "metric": "exact_match", "prompt": "How many planets are in the solar system? Reply with the number only.", "reference": "8"}
+{"category": "facts", "id": "fact-04", "metric": "exact_match", "prompt": "How many continents are there on Earth? Reply with the number only.", "reference": "7"}
+{"category": "facts", "id": "fact-05", "metric": "exact_match", "prompt": "How many letters are in the English alphabet? Reply with the number only.", "reference": "26"}
+{"category": "facts", "id": "fact-06", "metric": "exact_match", "prompt": "How many hours are in a day? Reply with the number only.", "reference": "24"}
+{"category": "facts", "id": "fact-07", "metric": "exact_match", "prompt": "What is the chemical formula for water? Reply with the formula only.", "reference": "H2O"}
+{"category": "facts", "id": "fact-08", "metric": "exact_match", "prompt": "What is the largest planet in the solar system? Reply with its name only.", "reference": "Jupiter"}
+{"category": "facts", "id": "fact-09", "metric": "exact_match", "prompt": "How many sides does a hexagon have? Reply with the number only.", "reference": "6"}
+{"category": "facts", "id": "fact-10", "metric": "exact_match", "prompt": "How many minutes are in an hour? Reply with the number only.", "reference": "60"}

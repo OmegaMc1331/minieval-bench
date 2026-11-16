@@ -1,0 +1,24 @@
+defaults:
+  concurrency: 4
+  repeats: 2
+  seed: 42
+  timeout: 60
+description: 'Suite evaluating JSON production against explicit schemas: object shapes,
+  arrays, required properties, types, enums, nesting and additional-property constraints.
+  Conformance is binary and schema specific; it does not measure JSON quality beyond
+  these schemas.'
+id: mini-structured
+license: MIT
+name: MiniEval Structured Output
+source: https://github.com/OmegaMc1331/minieval-bench
+tasks:
+- dataset: datasets/objects.jsonl
+  expected_metric: json_schema
+  id: objects
+- dataset: datasets/arrays.jsonl
+  expected_metric: json_schema
+  id: arrays
+- dataset: datasets/nested.jsonl
+  expected_metric: json_schema
+  id: nested
+version: 1.0.0

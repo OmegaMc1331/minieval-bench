@@ -1,0 +1,30 @@
+defaults:
+  concurrency: 4
+  repeats: 2
+  seed: 42
+  timeout: 60
+description: 'Reference-based suite checking adherence to explicit constraints: fixed
+  output strings, information extraction, deterministic text transformations, binary
+  classification and syntactic patterns. A handful of cases per constraint type cannot
+  measure instruction following globally; treat scores as protocol-level signals only.'
+id: mini-instruction
+license: MIT
+name: MiniEval Instruction Following
+source: https://github.com/OmegaMc1331/minieval-bench
+tasks:
+- dataset: datasets/exact-format.jsonl
+  expected_metric: exact_match
+  id: exact-format
+- dataset: datasets/extraction.jsonl
+  expected_metric: exact_match
+  id: extraction
+- dataset: datasets/transformation.jsonl
+  expected_metric: exact_match
+  id: transformation
+- dataset: datasets/classification.jsonl
+  expected_metric: exact_match
+  id: classification
+- dataset: datasets/syntax-constraints.jsonl
+  expected_metric: regex
+  id: syntax-constraints
+version: 1.0.0

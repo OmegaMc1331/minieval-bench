@@ -68,8 +68,9 @@ def suite_root(tmp_path: Path) -> Path:
 def test_discovery_finds_user_suites(suite_root: Path) -> None:
     write_suite(suite_root)
     summaries = discover_suites([suite_root])
-    assert [summary.suite_id for summary in summaries] == ["demo-suite"]
-    summary = summaries[0]
+    user_summaries = [s for s in summaries if s.origin == str(suite_root)]
+    assert [summary.suite_id for summary in user_summaries] == ["demo-suite"]
+    summary = user_summaries[0]
     assert summary.version == "1.0.0"
     assert summary.task_count == 1
     assert summary.error is None
@@ -94,10 +95,15 @@ def test_discovery_reports_duplicate_ids(suite_root: Path) -> None:
     other_root = suite_root.parent / "more-suites"
     write_suite(other_root)
     summaries = discover_suites([suite_root, other_root])
-    assert len(summaries) == 2
+    duplicated = [
+        summary
+        for summary in summaries
+        if summary.origin in (str(suite_root), str(other_root))
+    ]
+    assert len(duplicated) == 2
     assert all(
         summary.error == "suite id is defined in several registry locations"
-        for summary in summaries
+        for summary in duplicated
     )
 
 
@@ -105,7 +111,8 @@ def test_discovery_ignores_directories_without_definition(suite_root: Path) -> N
     (suite_root / "not-a-suite").mkdir(parents=True)
     write_suite(suite_root)
     summaries = discover_suites([suite_root])
-    assert [summary.suite_id for summary in summaries] == ["demo-suite"]
+    user_summaries = [s for s in summaries if s.origin == str(suite_root)]
+    assert [summary.suite_id for summary in user_summaries] == ["demo-suite"]
 
 
 def test_load_suite_reads_datasets(suite_root: Path) -> None:

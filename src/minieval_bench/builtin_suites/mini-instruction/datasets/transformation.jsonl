@@ -1,0 +1,8 @@
+{"category": "transformation", "id": "trans-01", "metric": "exact_match", "prompt": "Sort the letters of the word 'cab' alphabetically. Reply with the result only.", "reference": "abc"}
+{"category": "transformation", "id": "trans-02", "metric": "exact_match", "prompt": "Sort the letters of the word 'table' alphabetically. Reply with the result only.", "reference": "abelt"}
+{"category": "transformation", "id": "trans-03", "metric": "exact_match", "prompt": "Spell the word 'world' backwards. Reply with the word only.", "reference": "dlrow"}
+{"category": "transformation", "id": "trans-04", "metric": "exact_match", "prompt": "Write the words 'moon' and 'light' as a single word. Reply with the result only.", "reference": "moonlight"}
+{"category": "transformation", "id": "trans-05", "metric": "exact_match", "prompt": "Remove the first letter of the word 'strong'. Reply with the result only.", "reference": "trong"}
+{"category": "transformation", "id": "trans-06", "metric": "exact_match", "prompt": "Remove the last letter of the word 'printer'. Reply with the result only.", "reference": "printe"}
+{"category": "transformation", "id": "trans-07", "metric": "exact_match", "prompt": "Double the number 18. Reply with the number only.", "reference": "36"}
+{"category": "transformation", "id": "trans-08", "metric": "exact_match", "prompt": "Count the letters, then reply with the count for the word 'benchmark'. Reply with the number only.", "reference": "9"}
