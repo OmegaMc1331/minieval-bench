@@ -1,6 +1,8 @@
 from __future__ import annotations
 
 import json
+import os
+import subprocess
 from pathlib import Path
 
 import pytest
@@ -187,12 +189,13 @@ def test_unsafe_dataset_references_are_rejected(reference: str) -> None:
 
 
 def test_symlink_escape_is_detected(suite_root: Path) -> None:
-    suite_dir = write_suite(suite_root)
     outside = suite_root.parent / "outside.jsonl"
     write_dataset(
         outside, [{"id": "x", "prompt": "p", "metric": "exact_match", "reference": "r"}]
     )
-    link = suite_dir / "datasets" / "linked.jsonl"
+    link_dir = suite_root / "linked-suite"
+    (link_dir / "datasets").mkdir(parents=True)
+    link = link_dir / "datasets" / "linked.jsonl"
     try:
         link.symlink_to(outside)
     except OSError:
@@ -205,8 +208,38 @@ def test_symlink_escape_is_detected(suite_root: Path) -> None:
         "license": "MIT",
         "tasks": [{"id": "t", "dataset": "datasets/linked.jsonl"}],
     }
-    link_dir = suite_root / "linked-suite"
-    link_dir.mkdir()
+    (link_dir / "suite.yaml").write_text(yaml.safe_dump(definition), encoding="utf-8")
+    with pytest.raises(SuiteError, match="escapes the suite directory"):
+        load_suite_dir(link_dir)
+
+
+def test_junction_escape_is_detected(suite_root: Path) -> None:
+    if os.name != "nt":
+        pytest.skip("junction escape is the Windows variant of the symlink test")
+    outside_dir = suite_root.parent / "outside-data"
+    write_dataset(
+        outside_dir / "outside.jsonl",
+        [{"id": "x", "prompt": "p", "metric": "exact_match", "reference": "r"}],
+    )
+    link_dir = suite_root / "junction-suite"
+    (link_dir / "datasets_j").mkdir(parents=True)
+    junction = link_dir / "datasets_j"
+    junction.rmdir()
+    result = subprocess.run(
+        ["cmd", "/c", "mklink", "/J", str(junction), str(outside_dir)],
+        capture_output=True,
+        text=True,
+    )
+    if result.returncode != 0:
+        pytest.skip(f"junction creation failed: {result.stderr.strip()}")
+    definition = {
+        "id": "junction-suite",
+        "version": "1.0.0",
+        "name": "Junction",
+        "description": "d",
+        "license": "MIT",
+        "tasks": [{"id": "t", "dataset": "datasets_j/outside.jsonl"}],
+    }
     (link_dir / "suite.yaml").write_text(yaml.safe_dump(definition), encoding="utf-8")
     with pytest.raises(SuiteError, match="escapes the suite directory"):
         load_suite_dir(link_dir)
