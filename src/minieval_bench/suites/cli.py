@@ -22,6 +22,13 @@ from minieval_bench.suites.registry import (
     load_suite,
     validate_suite,
 )
+from minieval_bench.suites.reports import (
+    SuiteReportError,
+    load_suite_run,
+    render_suite_html,
+    suite_markdown_report,
+    write_suite_reports,
+)
 from minieval_bench.suites.runner import (
     SUITE_MANIFEST_NAME,
     SuiteRunError,
@@ -303,10 +310,16 @@ def run(
             result.error or "",
         )
     console.print(table)
+    written_reports = []
+    try:
+        written_reports = write_suite_reports(load_suite_run(output))
+    except SuiteReportError as exc:
+        console.print(f"[yellow]suite report could not be written: {exc}[/yellow]")
     for path in (
         output / SUITE_MANIFEST_NAME,
         output / LOCKFILE_NAME,
         output / "suite-results.json",
+        *written_reports,
     ):
         console.print(f"wrote {path}")
     if outcome.interrupted:
@@ -315,6 +328,42 @@ def run(
             "remaining ones were marked not_executed.[/red]"
         )
         raise typer.Exit(130)
+
+
+@suite_app.command("report")
+def report(
+    input_dir: Annotated[
+        Path, typer.Option("--input", help="Directory of a suite run.")
+    ],
+    report_format: Annotated[
+        str, typer.Option("--format", help="Output format: terminal or html.")
+    ] = "terminal",
+    output: Annotated[
+        Path | None,
+        typer.Option("--output", help="Path of the HTML file when --format html is used."),
+    ] = None,
+) -> None:
+    """Display or regenerate the global report of a suite run."""
+    if report_format not in ("terminal", "html"):
+        console.print(f"[red]Unknown format '{report_format}': expected terminal or html.[/red]")
+        raise typer.Exit(1)
+    try:
+        run = load_suite_run(input_dir)
+    except SuiteReportError as exc:
+        console.print(f"[red]{exc}[/red]")
+        raise typer.Exit(1) from exc
+
+    if report_format == "html":
+        target = output or input_dir / "suite-report.html"
+        target.write_text(
+            render_suite_html(run), encoding="utf-8"
+        )
+        console.print(f"wrote {target}")
+        return
+
+    from rich.markdown import Markdown
+
+    console.print(Markdown(suite_markdown_report(run)))
 
 
 @suite_app.command("verify")
