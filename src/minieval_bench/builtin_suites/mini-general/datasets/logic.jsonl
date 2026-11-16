@@ -1,0 +1,10 @@
+{"category": "logic", "id": "logic-01", "metric": "exact_match", "prompt": "All cats are animals. Tom is a cat. Is Tom an animal? Reply with yes or no only.", "reference": "yes"}
+{"category": "logic", "id": "logic-02", "metric": "exact_match", "prompt": "All roses are flowers. Some flowers fade quickly. Is it certain that all roses fade quickly? Reply with yes or no only.", "reference": "no"}
+{"category": "logic", "id": "logic-03", "metric": "exact_match", "prompt": "What number comes next in the sequence 2, 4, 6, 8? Reply with the number only.", "reference": "10"}
+{"category": "logic", "id": "logic-04", "metric": "exact_match", "prompt": "What number comes next in the sequence 3, 6, 12, 24? Reply with the number only.", "reference": "48"}
+{"category": "logic", "id": "logic-05", "metric": "exact_match", "prompt": "Is 17 greater than 21? Reply with yes or no only.", "reference": "no"}
+{"category": "logic", "id": "logic-06", "metric": "exact_match", "prompt": "Is 34 an even number? Reply with yes or no only.", "reference": "yes"}
+{"category": "logic", "id": "logic-07", "metric": "exact_match", "prompt": "Alice is taller than Bob. Bob is taller than Carol. Is Alice taller than Carol? Reply with yes or no only.", "reference": "yes"}
+{"category": "logic", "id": "logic-08", "metric": "exact_match", "prompt": "Every bird in the aviary can fly. A penguin is in the aviary. According to these premises only, can the penguin fly? Reply with yes or no only.", "reference": "yes"}
+{"category": "logic", "id": "logic-09", "metric": "exact_match", "prompt": "If it rains, the match is cancelled. The match was not cancelled. Did it rain? Reply with yes or no only.", "reference": "no"}
+{"category": "logic", "id": "logic-10", "metric": "exact_match", "prompt": "A train leaves at 15:00 and takes 45 minutes. Using a 24-hour clock, at what time does it arrive? Reply with HH:MM only.", "reference": "15:45"}

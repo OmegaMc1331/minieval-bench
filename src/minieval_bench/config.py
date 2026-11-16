@@ -88,29 +88,38 @@ def resolve_evaluator_paths(config: BenchmarkConfig, config_path: Path) -> None:
 def load_dataset(dataset_path: Path) -> list[DatasetEntry]:
     if not dataset_path.is_file():
         raise DatasetError(f"dataset file not found: {dataset_path}")
+    try:
+        content = dataset_path.read_text(encoding="utf-8")
+    except UnicodeDecodeError as exc:
+        raise DatasetError(f"{dataset_path}: dataset is not valid UTF-8") from exc
+    return parse_dataset_content(content, str(dataset_path))
 
+
+def parse_dataset_content(content: str, source_name: str) -> list[DatasetEntry]:
     entries = []
     seen_ids = set()
-    for line_number, line in enumerate(dataset_path.read_text(encoding="utf-8").splitlines(), 1):
+    for line_number, line in enumerate(content.splitlines(), 1):
         if not line.strip():
             continue
         try:
             raw_entry = json.loads(line)
         except json.JSONDecodeError as exc:
             raise DatasetError(
-                f"{dataset_path}:{line_number}: invalid JSON ({exc.msg})"
+                f"{source_name}:{line_number}: invalid JSON ({exc.msg})"
             ) from exc
         try:
             entry = DatasetEntry.model_validate(raw_entry)
         except ValidationError as exc:
             raise DatasetError(
-                f"{dataset_path}:{line_number}: {format_validation_error(exc)}"
+                f"{source_name}:{line_number}: {format_validation_error(exc)}"
             ) from exc
         if entry.id in seen_ids:
-            raise DatasetError(f"{dataset_path}:{line_number}: duplicate entry id '{entry.id}'")
+            raise DatasetError(
+                f"{source_name}:{line_number}: duplicate entry id '{entry.id}'"
+            )
         seen_ids.add(entry.id)
         entries.append(entry)
 
     if not entries:
-        raise DatasetError(f"{dataset_path}: dataset is empty")
+        raise DatasetError(f"{source_name}: dataset is empty")
     return entries

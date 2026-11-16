@@ -2,6 +2,45 @@
 
 All notable changes to this project are documented in this file. The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and the project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.4.0] - 2026-11-16
+
+Benchmark Suite and reproducible evaluation release. Design notes: `docs/V0.4.0_DESIGN.md`; user documentation: `docs/SUITES.md`, `docs/REPRODUCIBILITY.md`, `docs/DATASETS.md`.
+
+### Added
+
+- Benchmark suites: versioned multi-task protocols (`suite.yaml` + JSONL datasets) discovered through a local registry (built-in packages plus `MINIEVAL_SUITE_PATH` / `--path`), with `suite list`, `info` and `validate` checking identifiers, versions, dataset references (relative `.jsonl` inside the suite, no traversal or symlink escape), metrics, evaluator presence and rubrics without executing anything from the suite.
+- `suite run` executes one engine run per task over the models of a YAML models file, reusing `run_benchmark`, providers, evaluators, budgets and statistics unchanged. Preflight enforces `--max-calls` and the v0.3.1 judge budget checks; `--dry-run` prints the plan, judge call counts, evaluator dependencies (Docker requirement and availability) and heuristic cost upper bounds fully offline. Tasks get explicit statuses (`completed`, `partially_completed`, `unavailable`, `infrastructure_failed`, `not_executed`); unavailable tasks never score as zero, task results are written atomically, and `--resume` reuses stored task results only when their lock section still matches. User overrides (`--repeats`, `--seed`, `--concurrency`, `--timeout`, `--max-tokens`, `--temperature`, `--shuffle`) are recorded and flag the run as a modified protocol.
+- Reproducibility lock: every suite run writes `benchmark.lock.json`, a deterministic fingerprint (suite definition, dataset SHA-256s, sampling selection, JSON schema and code-test fingerprints, rubric fingerprint, models, effective parameters). `suite verify` recomputes it and reports dataset, schema, test, rubric, sampling, model, parameter, weight or version drift without calling any provider.
+- Deterministic sampling: `--sample N --sample-seed S [--sample-mode stratified]` selects a stable subset per task (id-sorted draw seeded from the dataset fingerprint, proportional stratification over entry categories), recorded in the lockfile and labelled as a subset in reports.
+- Suite analytics: `suite-results.json`, `suite-report.md` and a self-contained `suite-report.html` (Overview, Task breakdown, Model comparison, Latency, Tokens & costs, Reproducibility). Aggregation groups tasks per metric family (deterministic, JSON Schema, code, judge) and never mixes families: macro averages task rates with suite weights, micro pools trials, and coverage is shown per aggregate. `suite report` re-displays or regenerates the report.
+- `suite compare` gates on identical lockfiles: matching protocols get per-task score and latency deltas plus paired per-question statistics per task (reusing the v0.3.1 bootstrap machinery); differing protocols get precise warnings, no deltas and no ranking, in the terminal and in a standalone HTML report.
+- `suite export` writes a shareable zip (manifest, lockfile, aggregated results, per-task stats, reports, `checksums.json`); individual prompts and responses are only embedded with `--include-responses`, after a credential scan that refuses the export on match. Hashes verify integrity, not producer identity.
+- Dataset manager: `dataset list`, `dataset validate`, `dataset import` (local CSV/JSON to validated JSONL with a provenance sidecar; empty CSV cells map to null; JSON Schema and code-test entries must be authored as JSONL) and `dataset import-hf` (one file of a public Hugging Face dataset at a full 40-character commit sha, size-capped, no archives, no code execution, local cache reused offline, license from the dataset card, user declaration or explicitly unknown). Archives and unknown formats are refused with explicit messages.
+- Four original built-in suites, packaged in the wheel: `mini-general` (58 entries over 5 tasks), `mini-instruction` (34 entries over 5 tasks), `mini-structured` (17 JSON Schema entries over 3 tasks) and the experimental `mini-code` (6 code-test entries, gated behind `--allow-code-execution`). All questions are original with computed or hand-verified answers, MIT-licensed, honestly scoped as protocol demonstrations rather than representative benchmarks.
+
+### Improved
+
+- Suite runs keep the v0.3.1 per-task guarantees: separated latencies, per-evaluator statistics, evaluator budget accounting and manifest provenance are unchanged, and family aggregation reuses the same explicit-denominator discipline.
+- The registry loads built-in resources through `importlib.resources`, so suites and templates work from a wheel install without a source checkout.
+
+### Security
+
+- Suite and dataset discovery never executes suite- or dataset-provided code; validation compiles test modules and checks schemas without running them. Dataset references are confined to the suite directory (absolute paths, `..` and symlink escapes rejected); Hugging Face imports are restricted to https, pinned revisions, size caps and single JSONL/CSV files.
+- `mini-code` keeps every v0.3.1 code-safety guarantee: pinned image digest, restricted runtime, explicit `--allow-code-execution` activation and the documented residual worker-tampering risk.
+- Suite exports default to aggregates only; responses require the explicit flag and a credential scan (existing masking patterns) that refuses the export on match.
+
+### Compatibility
+
+- Every 0.3.1 command, artefact and report remains functional (covered by the existing suite plus new end-to-end checks on the legacy examples); `Manifest` and result models only gained additive optional fields. `DatasetEntry.category` is optional and additive; older datasets are unaffected.
+- Suite runs use the standard per-task report format, so `history`, `report` and CSV `export` keep working on their task directories.
+
+### Known Limitations
+
+- Reproducibility is protocol reproducibility: hosted models can change server-side and are outside the lockfile's control.
+- Dry-run cost bounds are heuristics on configured pricing and `max_tokens`; they are upper bounds, not measurements.
+- The interrupted task of a suite run loses its partial trials (completed tasks are kept); `--resume` re-executes that task.
+- Hugging Face imports do not support parquet or archives, and depend on the pinned revision remaining available.
+
 ## [0.3.1] - 2026-11-15
 
 Reliability, security and evaluation-integrity corrective release. The full defect analysis is in `docs/V0.3.1_AUDIT.md`.

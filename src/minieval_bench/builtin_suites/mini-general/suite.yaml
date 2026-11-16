@@ -1,0 +1,35 @@
+defaults:
+  concurrency: 4
+  repeats: 2
+  seed: 42
+  timeout: 60
+description: Small deterministic suite covering arithmetic, elementary logic, string
+  manipulation, stable factual questions and short format adherence. It exercises
+  the benchmark protocol with objectively checkable answers and is not a statistically
+  representative evaluation of model quality.
+id: mini-general
+license: MIT
+name: MiniEval General Evaluation
+source: https://github.com/OmegaMc1331/minieval-bench
+tasks:
+- dataset: datasets/arithmetic.jsonl
+  expected_metric: exact_match
+  id: arithmetic
+  weight: 1.0
+- dataset: datasets/logic.jsonl
+  expected_metric: exact_match
+  id: logic
+  weight: 1.0
+- dataset: datasets/strings.jsonl
+  expected_metric: exact_match
+  id: strings
+  weight: 1.0
+- dataset: datasets/facts.jsonl
+  expected_metric: exact_match
+  id: facts
+  weight: 1.0
+- dataset: datasets/formats.jsonl
+  expected_metric: regex
+  id: formats
+  weight: 1.0
+version: 1.0.0

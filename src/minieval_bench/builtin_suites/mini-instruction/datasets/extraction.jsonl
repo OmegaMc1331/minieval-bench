@@ -1,0 +1,6 @@
+{"category": "extraction", "id": "extr-01", "metric": "exact_match", "prompt": "From the text 'Order 4832 shipped on Monday', reply with the order number only.", "reference": "4832"}
+{"category": "extraction", "id": "extr-02", "metric": "exact_match", "prompt": "From the text 'Invoice INV-771 dated May 3', reply with the invoice identifier only.", "reference": "INV-771"}
+{"category": "extraction", "id": "extr-03", "metric": "exact_match", "prompt": "From the text 'Room 12B, floor 3, gate C', reply with the room number only.", "reference": "12B"}
+{"category": "extraction", "id": "extr-04", "metric": "exact_match", "prompt": "From the text 'Call Sarah at 4 p.m. to confirm', reply with the name only.", "reference": "Sarah"}
+{"category": "extraction", "id": "extr-05", "metric": "exact_match", "prompt": "From the text 'Version 2.11.0 released today', reply with the version number only.", "reference": "2.11.0"}
+{"category": "extraction", "id": "extr-06", "metric": "exact_match", "prompt": "From the text 'Paid 129.99 euros in total', reply with the amount only, without the currency.", "reference": "129.99"}

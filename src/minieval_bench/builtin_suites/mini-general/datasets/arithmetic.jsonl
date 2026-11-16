@@ -1,0 +1,20 @@
+{"category": "arithmetic", "id": "arith-01", "metric": "exact_match", "prompt": "Compute 25 + 14. Reply with the number only.", "reference": "39"}
+{"category": "arithmetic", "id": "arith-02", "metric": "exact_match", "prompt": "Compute 46 + 42. Reply with the number only.", "reference": "88"}
+{"category": "arithmetic", "id": "arith-03", "metric": "exact_match", "prompt": "Compute 39 + 28. Reply with the number only.", "reference": "67"}
+{"category": "arithmetic", "id": "arith-04", "metric": "exact_match", "prompt": "Compute 24 + 80. Reply with the number only.", "reference": "104"}
+{"category": "arithmetic", "id": "arith-05", "metric": "exact_match", "prompt": "Compute 22 + 86. Reply with the number only.", "reference": "108"}
+{"category": "arithmetic", "id": "arith-06", "metric": "exact_match", "prompt": "Compute 65 + 15. Reply with the number only.", "reference": "80"}
+{"category": "arithmetic", "id": "arith-07", "metric": "exact_match", "prompt": "Compute 14 + 22. Reply with the number only.", "reference": "36"}
+{"category": "arithmetic", "id": "arith-08", "metric": "exact_match", "prompt": "Compute 58 - 18. Reply with the number only.", "reference": "40"}
+{"category": "arithmetic", "id": "arith-09", "metric": "exact_match", "prompt": "Compute 95 - 11. Reply with the number only.", "reference": "84"}
+{"category": "arithmetic", "id": "arith-10", "metric": "exact_match", "prompt": "Compute 56 - 28. Reply with the number only.", "reference": "28"}
+{"category": "arithmetic", "id": "arith-11", "metric": "exact_match", "prompt": "Compute 84 - 18. Reply with the number only.", "reference": "66"}
+{"category": "arithmetic", "id": "arith-12", "metric": "exact_match", "prompt": "Compute 6 * 15. Reply with the number only.", "reference": "90"}
+{"category": "arithmetic", "id": "arith-13", "metric": "exact_match", "prompt": "Compute 9 * 11. Reply with the number only.", "reference": "99"}
+{"category": "arithmetic", "id": "arith-14", "metric": "exact_match", "prompt": "Compute 9 * 13. Reply with the number only.", "reference": "117"}
+{"category": "arithmetic", "id": "arith-15", "metric": "exact_match", "prompt": "Compute 8 * 17. Reply with the number only.", "reference": "136"}
+{"category": "arithmetic", "id": "arith-16", "metric": "exact_match", "prompt": "Compute 40 / 5. Reply with the number only.", "reference": "8"}
+{"category": "arithmetic", "id": "arith-17", "metric": "exact_match", "prompt": "Compute 28 / 4. Reply with the number only.", "reference": "7"}
+{"category": "arithmetic", "id": "arith-18", "metric": "exact_match", "prompt": "Compute 81 / 9. Reply with the number only.", "reference": "9"}
+{"category": "arithmetic", "id": "arith-19", "metric": "exact_match", "prompt": "Compute (4 + 5) * 5. Reply with the number only.", "reference": "45"}
+{"category": "arithmetic", "id": "arith-20", "metric": "exact_match", "prompt": "Compute (4 + 14) * 4. Reply with the number only.", "reference": "72"}

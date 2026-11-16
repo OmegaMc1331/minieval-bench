@@ -1,10 +1,14 @@
 # MiniEval
 
-MiniEval is a lightweight Python framework for benchmarking and comparing language models. It runs the same dataset against several models through LiteLLM, scores responses with deterministic metrics, LLM judges, JSON Schema validation and containerized code tests, and produces reproducible JSON, Markdown and interactive HTML reports with statistical analysis and side-by-side comparison of several runs. A deterministic mock provider and mock judge are included, so a full benchmark can run without any API key.
+MiniEval is a lightweight Python framework for benchmarking and comparing language models. It runs the same dataset against several models through LiteLLM, scores responses with deterministic metrics, LLM judges, JSON Schema validation and containerized code tests, and produces reproducible JSON, Markdown and interactive HTML reports with statistical analysis and side-by-side comparison of several runs. Since 0.4.0, multi-task benchmark suites can be discovered, versioned, executed, verified and compared under a common protocol, with a reproducibility lockfile pinning data, parameters and evaluators. A deterministic mock provider and mock judge are included, so a full benchmark can run without any API key.
 
 ## Features
 
 - Multi-model benchmarks configured from a single YAML file
+- Benchmark suites: versioned multi-task protocols with a local registry, dry runs, partial-failure handling, resume, deterministic sampling and per-family score aggregation that never mixes incompatible metrics
+- Four built-in original suites (`mini-general`, `mini-instruction`, `mini-structured`, experimental `mini-code`), packaged with MiniEval and runnable offline
+- Reproducibility lock: `benchmark.lock.json` fingerprints the whole protocol; `suite verify` detects any dataset, schema, test, rubric or parameter change without calling a provider
+- Dataset manager: validation of JSONL files, deterministic import of local CSV/JSON with provenance sidecars, controlled import of Hugging Face files at immutable commit revisions
 - LiteLLM providers: OpenAI, Anthropic, Ollama and other supported backends
 - Deterministic mock provider and mock judge for offline runs and testing
 - Deterministic metrics: `exact_match`, `contains`, `regex`
@@ -12,7 +16,7 @@ MiniEval is a lightweight Python framework for benchmarking and comparing langua
 - Blind pairwise comparison with position swapping
 - Structured output validation against JSON Schema (Draft 2020-12)
 - Code evaluation: generated Python tested inside a restricted Docker container, with a process-separated harness whose verdicts cannot be forged by evaluated programs, bounded output capture and an image pinned by digest
-- Statistical analysis: dispersion, percentile bootstrap intervals over question-level units, paired differences between runs
+- Statistical analysis: dispersion, percentile bootstrap intervals over question-level units, paired differences between runs and between suite runs
 - Repeated trials with per-repeat derived seeds, deterministic planning and optional shuffling
 - Capped concurrency with generation latency, evaluation latency, total time and queue delay reported separately
 - Distinct indicators: request success rate, answer accuracy (deterministic metrics), JSON conformance, code pass rate, judge score, evaluation coverage, overall pass rate
@@ -20,11 +24,12 @@ MiniEval is a lightweight Python framework for benchmarking and comparing langua
 - Bounded retries for transient provider errors only, honoring `Retry-After`
 - Error messages sanitized before export; no API keys, tokens or credentials in reports
 - JSON and Markdown reports with a run manifest (version, UTC date, seed, per-repeat seeds, dataset fingerprint)
-- Self-contained interactive HTML report: charts, trial explorer, light and dark themes, no server, no network
-- Side-by-side comparison of several runs with methodological warnings
+- Self-contained interactive HTML reports: charts, trial explorer, suite dashboard, light and dark themes, no server, no network
+- Side-by-side comparison of several runs with methodological warnings; suite comparison gated on identical protocols
+- Shareable zip export of suite runs, minimal by default, responses only on explicit request after a credential scan
 - Re-evaluation of stored responses without new generation calls
 - CSV export of individual trials and a local history of past runs
-- CLI with Rich table output: `validate`, `run`, `report`, `compare`, `export`, `history`, `evaluate`, `pairwise`, `calibrate`
+- CLI with Rich table output: `validate`, `run`, `report`, `compare`, `export`, `history`, `evaluate`, `pairwise`, `calibrate`, plus the `suite` and `dataset` groups
 
 ## Requirements
 
@@ -73,16 +78,73 @@ uv run minieval-bench report --input results/
 Example output of `run` on the bundled benchmark (seed 42, 6 entries, 3 repeats, 2 models):
 
 ```text
-                                                    Benchmark results
-┌─────────────┬──────────┬────┬────────┬─────────┬──────────┬──────────┬─────────┬─────────────┬──────────┬────────────┬───────────┬────────────┬────────────┐
-│ Model       │ Requests │ OK │ Failed │ Success │ Accuracy │ Coverage │ Overall │ Median (ms) │ P95 (ms) │ Queue (ms) │ In tokens │ Out tokens │ Cost (USD) │
-├─────────────┼──────────┼────┼────────┼─────────┼──────────┼──────────┼─────────┼─────────────┼──────────┼────────────┼───────────┼────────────┼────────────┤
-│ mock-free   │       18 │ 18 │      0 │  100.0% │    50.0% │   100.0% │   50.0% │        25.8 │     40.5 │       39.6 │        96 │         72 │        n/a │
-│ mock-priced │       18 │ 18 │      0 │  100.0% │    50.0% │   100.0% │   50.0% │        32.0 │     42.5 │      153.1 │        96 │         72 │   0.000156 │
-└─────────────┴──────────┴────┴────────┴─────────┴──────────┴──────────┴─────────┴─────────────┴──────────┴────────────┴───────────┴────────────┴────────────┘
+                                                                                              Benchmark results
+┌─────────────┬──────────┬────┬────────┬─────────┬──────────┬──────────┬─────────┬─────────────────┬──────────────┬──────────────────┬───────────────────┬────────────┬───────────┬────────────┬────────────┐
+│ Model       │ Requests │ OK │ Failed │ Success │ Accuracy │ Coverage │ Overall │ Median gen (ms) │ P95 gen (ms) │ Median eval (ms) │ Median total (ms) │ Queue (ms) │ In tokens │ Out tokens │ Cost (USD) │
+├─────────────┼──────────┼────┼────────┼─────────┼──────────┼──────────┼─────────┼─────────────────┼──────────────┼──────────────────┼───────────────────┼────────────┼───────────┼────────────┼────────────┤
+│ mock-free   │       18 │ 18 │      0 │  100.0% │    50.0% │  100.0% │  50.0% │            25.9 │         40.5 │              0.1 │              25.9 │       39.8 │        96 │         72 │        n/a │
+│ mock-priced │       18 │ 18 │      0 │  100.0% │    50.0% │  100.0% │  50.0% │            31.9 │         42.4 │              0.1 │              31.9 │      154.0 │        96 │         72 │   0.000156 │
+└─────────────┴──────────┴────┴────────┴─────────┴──────────┴──────────┴─────────┴─────────────────┴──────────────┴──────────────────┴───────────────────┴────────────┴───────────┴────────────┴────────────┘
 ```
 
 The accuracy of 50% comes from the dataset itself: three entries match the mock response format (`mock-` plus eight hex characters) and three deliberately do not.
+
+## Benchmark suites
+
+When a benchmark should cover several tasks under one protocol, use a suite
+instead of one config per dataset. The complete walkthrough, offline from
+installation to sharing:
+
+```bash
+# 1. see what ships with MiniEval (add --path DIR for your own suites)
+minieval-bench suite list
+
+# 2. inspect tasks, metrics, entries, licences and run conditions
+minieval-bench suite info mini-general
+minieval-bench suite validate mini-general
+
+# 3. list the candidate models (reuses the standard model configuration)
+cat > models.yaml <<'YAML'
+models:
+  - name: gpt-4o-mini
+    provider: litellm
+    model: openai/gpt-4o-mini
+  - name: mock-baseline
+    provider: mock
+YAML
+
+# 4. plan without spending anything: calls, judge calls, dependencies, cost bounds
+minieval-bench suite run mini-general --config models.yaml --dry-run
+
+# 5. run every task; results land under results/mini-general/
+minieval-bench suite run mini-general --config models.yaml --output results/mini-general
+
+# 6. open the global report (also written: suite-report.md, per-task reports)
+start results/mini-general/suite-report.html
+
+# 7. verify the protocol still matches the current suite and datasets
+minieval-bench suite verify results/mini-general
+
+# 8. compare two runs of the same suite (paired statistics when protocols match)
+minieval-bench suite compare --run results/run-a --run results/run-b
+
+# 9. share a verifiable archive (minimal by default)
+minieval-bench suite export --input results/mini-general --output mini-general.zip
+```
+
+Useful run options: `--sample 20 --sample-seed 7` runs a deterministic subset
+(`--sample-mode stratified` when entries carry categories), `--repeats`,
+`--seed`, `--concurrency`, `--timeout`, `--max-calls` cap the planned calls,
+`--resume` reuses stored task results whose protocol matches, and
+`--allow-code-execution` unlocks `code_tests` suites such as the experimental
+`mini-code`.
+
+The built-in suites are small, original and honest about their scope: they
+exercise the protocol with objectively checkable answers, they are not
+statistically representative evaluations. Suite format, aggregation rules and
+the built-in catalog: [docs/SUITES.md](docs/SUITES.md).
+
+![Suite report](docs/screenshots/suite-report.png)
 
 ## Configuration
 
@@ -298,6 +360,7 @@ Each trial records four durations: `generation_ms` (the model call itself, provi
 - The global `seed` is configurable. Each repeat derives its own trial seed deterministically from it (`sha256("<seed>:<repeat>")`), so repeats sample differently while remaining reproducible; the derived seeds are recorded in the manifest. All models answering the same entry in the same repeat receive the same seed when the provider supports it.
 - The execution plan (model, entry, repeat) is rebuilt identically from the configuration and the seed, with or without `shuffle`. Trial order in `results.json` follows the plan via `plan_index`; completion order depends on runtime scheduling and is not part of the export.
 - Seeds are best effort: they are forwarded to providers that support them, and the mock provider uses them directly. A seed does not guarantee identical answers across providers, runs or API versions.
+- Suite runs additionally write `benchmark.lock.json`, a deterministic fingerprint of the whole protocol (suite definition, dataset contents, sampling selection, JSON schemas, code tests, rubric, models, parameters). `suite verify` recomputes it and reports every difference; `--resume` only reuses stored results whose lock section still matches. This is protocol reproducibility: it does not bind hosted models, which can change server-side. Details: [docs/REPRODUCIBILITY.md](docs/REPRODUCIBILITY.md).
 
 ## Error handling and retries
 
@@ -318,6 +381,19 @@ minieval-bench history --root results/
 minieval-bench evaluate --input results/ --config benchmarks/example.yaml
 minieval-bench pairwise --input results/ --config benchmarks/judge-mock.yaml
 minieval-bench calibrate --config benchmarks/judge-mock.yaml --output calibration.json
+minieval-bench suite list
+minieval-bench suite info mini-general
+minieval-bench suite validate mini-general
+minieval-bench suite run mini-general --config models.yaml --output results/mini-general
+minieval-bench suite run mini-general --config models.yaml --dry-run
+minieval-bench suite report --input results/mini-general
+minieval-bench suite verify results/mini-general
+minieval-bench suite compare --run results/run-a --run results/run-b
+minieval-bench suite export --input results/mini-general --output mini-general.zip
+minieval-bench dataset list
+minieval-bench dataset validate datasets/custom.jsonl
+minieval-bench dataset import --source data/questions.csv --output datasets/questions.jsonl
+minieval-bench dataset import-hf --dataset org/name --revision <commit-sha> --file data.jsonl --output datasets/imported.jsonl
 minieval-bench --version
 ```
 
@@ -452,9 +528,13 @@ Scans a directory and its subdirectories for runs (a `manifest.json`, or a `resu
 - `budget_usd` is a stop-on-observed guard: input-token cost cannot be pre-bounded, so an in-flight judge call may overshoot it.
 - Latency numbers depend on concurrency and network conditions; compare medians across runs with the same `concurrency`.
 - Bootstrap intervals describe observed data; they are not significance tests, and no model is declared statistically superior.
-- Estimated costs (from pricing fields or LiteLLM's price map) can differ from actual provider billing.
-- There is no checkpointing: an interrupted run cannot resume; rerun it instead.
-- `results.json` and `report.html` contain full responses and judge reasons; review before sharing.
+- Estimated costs (from pricing fields or LiteLLM's price map) can differ from actual provider billing. Dry-run cost bounds are heuristics on configured pricing, never measurements.
+- The built-in suites are small demonstration protocols, not statistically representative benchmarks; their descriptions say so and sampled runs are labelled as subsets.
+- Suite reproducibility is protocol reproducibility: data, parameters and evaluators are pinned, hosted models are not. `suite verify` cannot detect provider-side changes.
+- Hugging Face imports depend on the remote host and on the pinned revision staying available; parquet and archives are not supported.
+- Zip export hashes verify integrity against the archive's own checksums; they do not authenticate the producer, and no cryptographic signature is implemented.
+- A single engine `run` has no checkpointing: an interrupted run cannot resume, rerun it instead. Suite runs support `--resume` for completed tasks only; the interrupted task itself is re-executed.
+- `results.json` and `report.html` contain full responses and judge reasons; review before sharing. Suite exports exclude them unless `--include-responses` is passed.
 - The trial explorer paginates to keep the DOM small, but the whole dataset is embedded in the HTML file; there is no lazy loading from disk.
 - Comparison reports show deltas between the first and the last run; intermediate trends are visible in the per-run columns.
 

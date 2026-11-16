@@ -1,0 +1,6 @@
+{"category": "syntax", "id": "syn-01", "metric": "regex", "prompt": "Reply with exactly three words separated by single spaces, about the weather, nothing else.", "reference": "^\\S+( \\S+){2}$"}
+{"category": "syntax", "id": "syn-02", "metric": "regex", "prompt": "Reply with one question mark terminated question about colors, nothing else.", "reference": "^.*\\?$"}
+{"category": "syntax", "id": "syn-03", "metric": "regex", "prompt": "Reply with exactly two digits followed by the word px, nothing else.", "reference": "^\\d{2}px$"}
+{"category": "syntax", "id": "syn-04", "metric": "regex", "prompt": "Reply with a lowercase word of exactly six letters, nothing else.", "reference": "^[a-z]{6}$"}
+{"category": "syntax", "id": "syn-05", "metric": "regex", "prompt": "Reply with a JSON-like key and integer value in the form key: 7, nothing else.", "reference": "^[a-z]+: 7$"}
+{"category": "syntax", "id": "syn-06", "metric": "regex", "prompt": "Reply with exactly four words separated by hyphens, nothing else.", "reference": "^\\S+(-\\S+){3}$"}

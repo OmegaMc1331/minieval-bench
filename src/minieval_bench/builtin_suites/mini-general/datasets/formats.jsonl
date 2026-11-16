@@ -1,0 +1,8 @@
+{"category": "formats", "id": "fmt-01", "metric": "regex", "prompt": "Reply with any calendar date in YYYY-MM-DD format, nothing else.", "reference": "^\\d{4}-\\d{2}-\\d{2}$"}
+{"category": "formats", "id": "fmt-02", "metric": "regex", "prompt": "Reply with any time of day in 24-hour HH:MM format, nothing else.", "reference": "^([01]\\d|2[0-3]):[0-5]\\d$"}
+{"category": "formats", "id": "fmt-03", "metric": "regex", "prompt": "Reply with a string of exactly eight lowercase hexadecimal digits, nothing else.", "reference": "^[0-9a-f]{8}$"}
+{"category": "formats", "id": "fmt-04", "metric": "regex", "prompt": "Reply with a string of exactly five digits, nothing else.", "reference": "^\\d{5}$"}
+{"category": "formats", "id": "fmt-05", "metric": "regex", "prompt": "Reply with a single word written only in uppercase letters, nothing else.", "reference": "^[A-Z]+$"}
+{"category": "formats", "id": "fmt-06", "metric": "regex", "prompt": "Reply with exactly three color names separated by commas, nothing else.", "reference": "^[A-Za-z]+(, [A-Za-z]+){2}$"}
+{"category": "formats", "id": "fmt-07", "metric": "regex", "prompt": "Reply with a hexadecimal color code such as #1a2b3c, nothing else.", "reference": "^#[0-9a-fA-F]{6}$"}
+{"category": "formats", "id": "fmt-08", "metric": "regex", "prompt": "Reply with an email-like string made of lowercase letters, one @, and the word example.com, nothing else.", "reference": "^[a-z]+@example\\.com$"}

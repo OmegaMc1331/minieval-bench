@@ -68,6 +68,7 @@ def build_manifest(
     entries: list[DatasetEntry],
     started_at: datetime,
     duration_seconds: float,
+    dataset_sha256: str | None = None,
 ) -> Manifest:
     return Manifest(
         minieval_version=__version__,
@@ -77,7 +78,7 @@ def build_manifest(
         repeats=config.defaults.repeats,
         concurrency=config.defaults.concurrency,
         dataset_path=config.dataset,
-        dataset_sha256=dataset_fingerprint(Path(config.dataset)),
+        dataset_sha256=dataset_sha256 or dataset_fingerprint(Path(config.dataset)),
         dataset_entries=len(entries),
         models=config.models,
         duration_seconds=duration_seconds,
