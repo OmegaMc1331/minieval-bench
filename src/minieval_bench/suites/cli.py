@@ -8,7 +8,10 @@ import typer
 from rich.console import Console
 from rich.table import Table
 
+from minieval_bench.html_report import render_standalone
 from minieval_bench.models import ModelConfig
+from minieval_bench.suites.compare import build_suite_comparison_payload
+from minieval_bench.suites.export import SuiteExportError, export_suite_archive
 from minieval_bench.suites.lockfile import (
     LOCKFILE_NAME,
     build_lockfile,
@@ -364,6 +367,116 @@ def report(
     from rich.markdown import Markdown
 
     console.print(Markdown(suite_markdown_report(run)))
+
+
+@suite_app.command("compare")
+def compare(
+    runs_arg: Annotated[
+        list[Path],
+        typer.Option("--run", help="Directory of a suite run (repeat the option)."),
+    ],
+    output: Annotated[
+        Path, typer.Option("--output", help="Path of the comparison HTML report.")
+    ] = Path("suite-comparison.html"),
+) -> None:
+    """Compare two or more runs of the same benchmark suite."""
+    if len(runs_arg) < 2:
+        console.print("[red]suite compare needs at least two --run directories.[/red]")
+        raise typer.Exit(1)
+    try:
+        payload = build_suite_comparison_payload(runs_arg)
+    except SuiteReportError as exc:
+        console.print(f"[red]{exc}[/red]")
+        raise typer.Exit(1) from exc
+
+    output.parent.mkdir(parents=True, exist_ok=True)
+    output.write_text(
+        render_standalone(payload, "suite_compare.html", "suite_compare.js"),
+        encoding="utf-8",
+    )
+    if payload["protocolEqual"]:
+        console.print(
+            "[green]Protocols are identical: detailed comparisons are included.[/green]"
+        )
+        paired_table = build_suite_paired_table(payload.get("paired") or [])
+        if paired_table:
+            console.print(paired_table)
+    else:
+        for difference in payload["differences"]:
+            console.print(f"[yellow]{difference}[/yellow]")
+        console.print(
+            "[yellow]Protocols differ: no score differences were computed and models"
+            " are not ranked. Individual results stay in each run directory.[/yellow]"
+        )
+    console.print(f"wrote {output}")
+
+
+@suite_app.command("export")
+def export(
+    input_dir: Annotated[
+        Path, typer.Option("--input", help="Directory of a suite run to export.")
+    ],
+    output: Annotated[
+        Path, typer.Option("--output", help="Path of the zip archive to create.")
+    ],
+    include_responses: Annotated[
+        bool,
+        typer.Option(
+            "--include-responses",
+            help="Include individual prompts and responses (scanned for credentials).",
+        ),
+    ] = False,
+) -> None:
+    """Export a shareable archive of a suite run."""
+    try:
+        summary = export_suite_archive(input_dir, output, include_responses)
+    except (SuiteReportError, SuiteExportError) as exc:
+        console.print(f"[red]{exc}[/red]")
+        raise typer.Exit(1) from exc
+    console.print(
+        f"wrote {summary['path']} ({summary['members']} members,"
+        f" {summary['entry_count']} questions)"
+    )
+    if summary["include_responses"]:
+        console.print(
+            "Individual responses are included; make sure they contain nothing"
+            " sensitive before sharing."
+        )
+    else:
+        console.print(
+            "Minimal mode: aggregated results and protocol only. Pass"
+            " --include-responses to embed individual trials."
+        )
+    console.print(
+        "checksums.json verifies member integrity against this archive; hashes do not"
+        " authenticate the producer."
+    )
+
+
+def build_suite_paired_table(paired: list[dict]) -> Table | None:
+    if not paired:
+        return None
+    table = Table(title="Paired differences per question (run 2 minus run 1)")
+    table.add_column("Task")
+    table.add_column("Model")
+    table.add_column("Metric")
+    table.add_column("Questions", justify="right")
+    table.add_column("Mean diff", justify="right")
+    table.add_column("95% CI low", justify="right")
+    table.add_column("95% CI high", justify="right")
+    for entry in paired:
+        summary = entry["differences_summary"]
+        interval = entry["ci95"]
+        table.add_row(
+            entry["task"],
+            entry["model"],
+            entry.get("metric", "pass rate"),
+            str(entry["units"]),
+            f"{summary['mean']:.3f}" if summary["mean"] is not None else "n/a",
+            f"{interval['low']:.3f}" if interval["low"] is not None else "n/a",
+            f"{interval['high']:.3f}" if interval["high"] is not None else "n/a",
+        )
+    return table
 
 
 @suite_app.command("verify")

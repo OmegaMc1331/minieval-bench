@@ -231,7 +231,10 @@ def test_consumption_totals(tmp_path: Path) -> None:
         encoding="utf-8",
     )
     output = tmp_path / "out"
-    run_suite(load_suite_dir(suite_dir), SuiteRunOptions(models_path=models_file, output_dir=output))
+    run_suite(
+        load_suite_dir(suite_dir),
+        SuiteRunOptions(models_path=models_file, output_dir=output),
+    )
 
     payload = build_suite_payload(load_suite_run(output))
     row = payload["consumption"][0]
