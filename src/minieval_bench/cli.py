@@ -45,6 +45,7 @@ from minieval_bench.reports import (
     write_reports,
 )
 from minieval_bench.runner import compute_stats, run_benchmark
+from minieval_bench.suites.cli import suite_app
 
 app = typer.Typer(
     no_args_is_help=True,
@@ -736,6 +737,9 @@ def models_table(benchmark_config: BenchmarkConfig) -> Table:
             cost,
         )
     return table
+
+
+app.add_typer(suite_app, name="suite")
 
 
 if __name__ == "__main__":

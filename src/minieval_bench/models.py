@@ -103,6 +103,7 @@ class DatasetEntry(BaseModel):
     system: str | None = None
     json_schema: dict | None = None
     tests: str | None = None
+    category: str | None = None
 
     @model_validator(mode="after")
     def check_metric_requirements(self) -> DatasetEntry:
